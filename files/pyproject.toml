@@ -1,0 +1,30 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "edgecode-assistant"
+version = "0.6.0"
+description = "Local repository RAG baseline, AST chunking, hybrid retrieval, parent context expansion, and retrieval evaluation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "sentence-transformers>=3,<6",
+    "faiss-cpu>=1.9,<2",
+    "numpy>=1.26,<3",
+    "ollama>=0.4,<1",
+    "rank-bm25>=0.2.2,<1",
+]
+
+[project.optional-dependencies]
+advanced = ["tree-sitter>=0.24,<1"]
+
+[project.scripts]
+edgecode = "baseline_cli:main"
+edgecode-ast = "ast_cli:main"
+edgecode-hybrid = "hybrid_cli:main"
+edgecode-parent = "parent_cli:main"
+edgecode-evaluate = "evaluate_cli:main"
+
+[tool.setuptools]
+py-modules = ["main", "repository_reader", "baseline_rag", "baseline_cli", "ast_rag", "ast_cli", "hybrid_rag", "hybrid_cli", "parent_rag", "parent_cli", "evaluation", "evaluate_cli", "hifirepoqa_cli"]

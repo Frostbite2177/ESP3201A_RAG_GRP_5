@@ -1,0 +1,346 @@
+[
+  {
+    "question_id": 795,
+    "repo": "agentscope-ai/agentscope",
+    "title": "[Demo]: PlanNotebook work with ReActAgent examples.",
+    "body": "Working with ReActAgent\nWorking with ReActAgent ¶\nThe ReActAgent in AgentScope has integrated the plan module by a plan_notebook parameter in its constructor. Once provided, the agent will\nThe ReActAgent in AgentScope integrates the plan module through the plan_notebook parameter in its constructor. Once provided, the agent will\n\nbe equipped with the plan management tool functions, and\nbe equipped with plan management tool functions, and\n\nbe inserted with the hint messages at the beginning of each reasoning step\nbe inserted with hint messages at the beginning of each reasoning step\n\nThere are two ways to use the plan module with the ReActAgent:\nThere are two ways to use the plan module with the ReActAgent:\n\nManual plan specification: Users can manually create a plan by calling the create_plan tool function, and initialize the ReActAgent with the plan notebook.\nManual plan specification: Users can manually create a plan by calling the create_plan tool function and initialize the ReActAgent with the plan notebook.\n\nAgent-managed plan execution: The agent will create and manage the plan by itself, by calling the plan management tool functions.\nAgent-managed plan execution: The agent will automatically create and manage the plan by calling the plan management tool functions.",
+    "comments": "@superbinlee The sample related to the plan is in this directory, and both modes are included: https://github.com/agentscope-ai/agentscope/tree/main/examples/functionality/plan\n\nI tried replacing the model with the DashScope API's qwen-max model, and it can run successfully. What does \"not successful\" specifically refer to here, or what is the error?",
+    "llm_analysis": {
+      "correct_answer": "To successfully use the ReActAgent with a PlanNotebook, ensure that you initialize the ReActAgent with the PlanNotebook instance after creating a plan using the create_plan method. The agent should then be able to manage the plan execution automatically. Here is a complete example:\n\n```python\nimport asyncio\nfrom agentscope.agent import ReActAgent, UserAgent\nfrom agentscope.formatter import OpenAIChatFormatter\nfrom agentscope.memory import InMemoryMemory\nfrom agentscope.message import Msg\nfrom agentscope.model import OpenAIChatModel\nfrom agentscope.plan import PlanNotebook, SubTask\nfrom loguru import logger\n\nmodel_id = \"Qwen3-Coder-Flash\"\napi_base = \"http://h\"\napi_key = \"xxxdxxx\"\n\nasync def main() -> None:\n    plan_notebook = PlanNotebook()\n\n    await plan_notebook.create_plan(\n        name=\"Storytelling Session\",\n        description=\"A session for telling stories and sharing feelings about stories.\",\n        expected_outcome=\"A complete storytelling experience with story sharing and emotional reflection.\",\n        subtasks=[\n            SubTask(\n                name=\"Tell a story\",\n                description=\"Tell a story to the listener.\",\n                expected_outcome=\"A well-told story that captures the listener's attention\",\n            ),\n            SubTask(\n                name=\"Listen and share feelings\",\n                description=\"Listen to the story told by the other person and share your feelings.\",\n                expected_outcome=\"A thoughtful emotional reflection and discussion about the story\",\n            ),\n        ],\n    )\n\n    agent = ReActAgent(\n        name=\"Storyteller\",\n        sys_prompt=\"You are a helpful storyteller.\",\n        model=OpenAIChatModel(\n            api_key=api_key,\n            model_name=model_id,\n            client_args={\"base_url\": api_base},\n            stream=False,\n        ),\n        formatter=OpenAIChatFormatter(),\n        plan_notebook=plan_notebook,\n    )\n\n    user = UserAgent(name=\"user\")\n    while True:\n        msg = await user(msg)\n        if msg.get_text_content() == \"exit\":\n            break\n        msg = await agent(msg)\n\nasyncio.run(main())\n```",
+      "reasoning_of_answer": "The issue discusses using the ReActAgent with a PlanNotebook and the user is looking for a complete example. The provided code initializes the PlanNotebook and uses the create_plan method correctly, which is essential for the agent to function as intended. The answer includes a complete example that demonstrates both manual plan specification and agent interaction, addressing the user's request for a working example.",
+      "scoring_rubric": [
+        {
+          "key": "must_have_plan_initialization",
+          "description": "Requirement: The answer must include the initialization of the PlanNotebook instance. How to satisfy: Check if the answer shows the creation of a PlanNotebook object before using it in the ReActAgent.",
+          "weight": 3
+        },
+        {
+          "key": "must_have_create_plan_usage",
+          "description": "Requirement: The answer must demonstrate the use of the create_plan method. How to satisfy: Verify that the answer includes a call to plan_notebook.create_plan with appropriate parameters.",
+          "weight": 3
+        },
+        {
+          "key": "must_have_agent_initialization",
+          "description": "Requirement: The answer must include the initialization of the ReActAgent with the PlanNotebook. How to satisfy: Ensure the answer shows the ReActAgent being created with the plan_notebook parameter.",
+          "weight": 3
+        },
+        {
+          "key": "must_have_interaction_example",
+          "description": "Requirement: The answer must provide an example of interacting with the ReActAgent. How to satisfy: Check if the answer includes a loop or function that demonstrates user interaction with the agent.",
+          "weight": 2
+        },
+        {
+          "key": "must_not_have_incomplete_code",
+          "description": "Requirement: The answer must not contain incomplete or non-functional code. How to satisfy: Review the provided code for any missing parts or errors that would prevent it from running successfully.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the importance of correctly initializing and using the PlanNotebook and ReActAgent, as well as providing a complete interaction example."
+    },
+    "url": "https://github.com/agentscope-ai/agentscope/issues/795",
+    "created_at": "2025-09-19T03:33:39Z",
+    "updated_at": "2025-09-24T11:40:25Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 787,
+    "repo": "agentscope-ai/agentscope",
+    "title": "How to get streaming content ?",
+    "body": "**<u>AgentScope is an open-source project. To involve a broader community, we recommend asking your questions in English.</u>**\n\n\nHow can I modify the code below to extract its streaming content using a forloop? Because the external interface expects a streaming response.\n\n```\n    msg = None\n    while True:\n        msg = await user(msg)\n        if msg.get_text_content() == \"exit\":\n            break\n        msg = await agent(msg)\n```\n",
+    "comments": "python\nimport sys\nimport json\nimport time\nimport asyncio\nfrom typing import AsyncGenerator, List\n\nsys.path.append('..')\n\nfrom src.agents.AgentDeploy import agent_app_run, agent_app_set_callback\n\nMODEL_INFO = {\"name\": \"agno-chat\"}\n\nasync def chat_simu(question: str) -> AsyncGenerator[str, None]:\n    \"\"\"Chat simulator generator for testing\"\"\"\n    test_responses = [\n        \"This is a simulated response.\",\n        \"It demonstrates streaming capabilities.\",\n        \"Each part is sent as a separate block.\",\n        \"This is the final response content.\"\n        \"hahahahha       ===========\"\n    ]\n    for response in test_responses:\n        yield response\n        await asyncio.sleep(1)  # Simulate asynchronous processing\n\n# Add necessary imports\nfrom agentscope.agent import ReActAgent\nfrom agentscope.message import Msg\nfrom agentscope.model import OpenAIChatModel\nfrom agentscope.formatter import OpenAIChatFormatter\nfrom agentscope.memory import InMemoryMemory\nfrom typing import Any, Dict\nfrom collections import deque\n\nclass StreamQueue:\n    \"\"\"Streaming content queue manager\"\"\"\n    \n    def __init__(self):\n        self.queue = deque()\n        self.new_data_event = asyncio.Event()\n        self.prev_text = \"\"  # Save the previous text content\n    \n    def add_chunk(self, chunk: list):\n        \"\"\"Add streaming block to queue - extract incremental text\"\"\"\n        if isinstance(chunk, list) and len(chunk) > 0:\n            if isinstance(chunk[0], dict) and 'text' in chunk[0]:\n                current_text = chunk[0]['text']\n                \n                # Calculate incremental part\n                if current_text.startswith(self.prev_text):\n                    incremental_text = current_text[len(self.prev_text):]\n                    \n                    # Only add incremental part to queue\n                    if incremental_text:\n                        self.queue.append(('chunk', incremental_text))\n                        self.new_data_event.set()\n                \n                # Update the previous text content\n                self.prev_text = current_text\n                return\n        \n        # If format doesn't meet expectations, directly add original content\n        self.queue.append(('chunk', chunk))\n        self.new_data_event.set()\n    \n    def add_final_response(self, response: Any):\n        \"\"\"Add final response to queue\"\"\"\n        if hasattr(response, 'content') and response.content:\n            # Add final response content to queue\n            final_content = [{\"type\": \"text\", \"text\": f\"\\n=== Final Response ===\\n{response.content}\"}]\n            self.queue.append(('chunk', final_content))\n            self.new_data_event.set()\n        \n        # Mark stream end\n        self.end_stream()\n    \n    def end_stream(self):\n        \"\"\"End current stream\"\"\"\n        self.queue.append(('full', None))\n        self.new_data_event.set()\n    \n    async def get_next_item(self):\n        \"\"\"Asynchronously get next queue item\"\"\"\n        while not self.queue:\n            await self.new_data_event.wait()\n            self.new_data_event.clear()\n        \n        return self.queue.popleft()\n    \n    def has_data(self):\n        return len(self.queue) > 0\n    \n    def clear(self):\n        self.queue.clear()\n        self.new_data_event.clear()\n        self.prev_text = \"\"\n\n# Global stream queue\nstream_queue = StreamQueue()\n\ndef pre_print_hook(\n    self,\n    kwargs: Dict[str, Any],\n) -> Dict[str, Any]:\n    \"\"\"Pre-print hook - capture output to queue\"\"\"\n    msg = kwargs.get(\"msg\")\n    if msg and hasattr(msg, 'content') and msg.content:\n        content = msg.content\n        stream_queue.add_chunk(content)\n    return kwargs\n\ndef post_reply_hook(\n    self,\n    kwargs: Dict[str, Any],\n    return_value: Msg,\n) -> Msg:\n    \"\"\"Post-reply hook - add final response to queue\"\"\"\n    stream_queue.add_final_response(return_value)\n    return return_value\n\nasync def agent_scope_chat(question: str) -> AsyncGenerator[str, None]:\n    \"\"\"AgentScope chat callback function - only get streamed data from queue\"\"\"\n    \n    # Initialize model and agent\n    model = OpenAIChatModel(\n        model_name=\"xxx\",\n        api_key=\"EMPTY\",\n        stream=True,\n        client_args={\"base_url\": \"http://x.x.x.x:8063/v1\"},\n        generate_kwargs={\"temperature\": 0.7, \"max_tokens\": 30000}\n    )\n\n    agent = ReActAgent(\n        name=\"Friday\",\n        sys_prompt=\"Hello\",\n        model=model,\n        memory=InMemoryMemory(),\n        formatter=OpenAIChatFormatter(),\n    )\n\n    # Register hooks\n    agent.register_instance_hook(\n        hook_type=\"pre_print\",\n        hook_name=\"print_capture\",\n        hook=pre_print_hook,\n    )\n    \n    agent.register_instance_hook(\n        hook_type=\"post_reply\",\n        hook_name=\"stream_end\",\n        hook=post_reply_hook,\n    )\n\n    # Clear queue\n    stream_queue.clear()\n    \n    # Create user message\n    user_msg = Msg(\"user\", question, \"user\")\n    \n    # Start agent processing task (async execution)\n    agent_task = asyncio.create_task(agent(user_msg))\n    \n    # Get streamed data from queue and yield\n    try:\n        while True:\n            try:\n                # Get next streaming item\n                item_type, content = await asyncio.wait_for(stream_queue.get_next_item(), timeout=1.0)\n                \n                if item_type == 'chunk':\n                    # Extract text field content\n                    if isinstance(content, list) and len(content) > 0:\n                        if isinstance(content[0], dict) and 'text' in content[0]:\n                            text_content = content[0]['text']\n                            yield text_content\n                        else:\n                            yield str(content)\n                    else:\n                        yield str(content)\n                    \n                elif item_type == 'full':\n                    # End generation\n                    break\n                    \n            except asyncio.TimeoutError:\n                # Check if agent task is complete\n                if agent_task.done():\n                    break\n                # Check if there may still be data arriving\n                if not stream_queue.has_data():\n                    continue\n                else:\n                    break\n                    \n    except Exception as e:\n        yield f\"Stream data processing error: {str(e)}\"\n    \n    finally:\n        # Wait for agent task completion\n        if not agent_task.done():\n            agent_task.cancel()\n            try:\n                await agent_task\n            except (asyncio.CancelledError, Exception):\n                pass\n        \n        # Clean up resources\n        stream_queue.clear()\n\nasync def agno_chat(question: str) -> AsyncGenerator[str, None]:\n    pass\n\n\nasync def test():\n    async for chunk in agent_scope_chat(\"Write a Python sorting algorithm\"):\n        print(\"\\nReceived incremental data:\", repr(chunk))\n        yield chunk\n\nasync def main():\n    async for chunk in test():\n        pass\n\n\nif __name__ == '__main__':\n\n    asyncio.run(main())\n\n    # # Set callback function - use AgentScope chat\n    # agent_app_set_callback(agent_scope_chat)\n    \n    # # Run agent application\n    # agent_app_run(port=9876)",
+    "llm_analysis": {
+      "correct_answer": "To extract streaming content using a for loop, modify the code as follows:\n\n```python\nasync def stream_content():\n    async for msg in agent_scope_chat(question):\n        print(msg)\n```\n\nThis utilizes the `agent_scope_chat` function to yield streaming responses asynchronously.",
+      "reasoning_of_answer": "The original question asked for a modification to extract streaming content using a for loop. The provided code snippet demonstrates how to implement an asynchronous for loop to receive messages from the `agent_scope_chat` function, which is designed to yield streaming responses. This solution directly addresses the user's request and adheres to the expected behavior of the external interface.",
+      "scoring_rubric": [
+        {
+          "key": "correct_function_usage",
+          "description": "Requirement: The answer must correctly use the `agent_scope_chat` function. How to satisfy: Verify that the answer includes a call to `agent_scope_chat` to yield streaming responses.",
+          "weight": 3
+        },
+        {
+          "key": "asynchronous_handling",
+          "description": "Requirement: The answer must demonstrate proper asynchronous handling. How to satisfy: Check that the answer uses `async for` to iterate over the streaming responses.",
+          "weight": 3
+        },
+        {
+          "key": "output_format",
+          "description": "Requirement: The answer must specify how to handle the output of the streaming content. How to satisfy: Ensure the answer includes a method (e.g., `print(msg)`) to display or process the streamed content.",
+          "weight": 2
+        },
+        {
+          "key": "clarity_and_completeness",
+          "description": "Requirement: The answer must be clear and complete. How to satisfy: Review that the answer provides a full code snippet and explains its purpose without ambiguity.",
+          "weight": 2
+        },
+        {
+          "key": "no_synchronous_code",
+          "description": "Requirement: The answer must not include synchronous code for streaming. How to satisfy: Ensure that the answer does not suggest using blocking calls or synchronous loops.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the importance of asynchronous programming and correct function usage, as the original question specifically requested a solution for streaming content."
+    },
+    "url": "https://github.com/agentscope-ai/agentscope/issues/787",
+    "created_at": "2025-09-18T01:27:21Z",
+    "updated_at": "2025-09-28T12:17:57Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 779,
+    "repo": "agentscope-ai/agentscope",
+    "title": "How to obtain the inference information of ReActAgent",
+    "body": "I created a jarvis = ReActAgent(). After executing await jarvis(msg), the console output the reasoning process and execution process. How can I save the reasoning process to a variable?",
+    "comments": "What does \"reasoning process\" specifically refer to here?\n> What does \"reasoning process\" specifically refer to here?\n\nThe information output during ReAct reasoning\n@zhang1983yun If it refers to the result of the `_reasoning` function, i.e., the text output by the LLM and the tool call, you can get this msg object in real-time through the post_reasoning hook.\n\nIf you want to obtain it all at once, you can directly use `await agent.memory.get_memory()` to get all the records.",
+    "llm_analysis": {
+      "correct_answer": "To obtain the reasoning information of ReActAgent, you can use `await agent.memory.get_memory()` to get all the records at once, or get the reasoning process's msg object in real-time through the `post_reasoning` hook.",
+      "reasoning_of_answer": "The correct answer was derived from the comments where it was clarified that the reasoning process refers to the output of the `_reasoning` function. The solution includes two methods to capture the reasoning information: using the memory retrieval method and the post_reasoning hook.",
+      "scoring_rubric": [
+        {
+          "key": "method_memory_retrieval",
+          "description": "Requirement: The answer must include the method to retrieve all reasoning records using `await agent.memory.get_memory()`. How to satisfy: Check if the answer explicitly mentions this method and its usage.",
+          "weight": 3
+        },
+        {
+          "key": "method_post_reasoning_hook",
+          "description": "Requirement: The answer must mention the use of the `post_reasoning` hook to obtain reasoning information in real-time. How to satisfy: Verify that the answer describes how to implement or use the `post_reasoning` hook.",
+          "weight": 2
+        },
+        {
+          "key": "clarification_of_reasoning",
+          "description": "Requirement: The answer must clarify what is meant by 'reasoning process'. How to satisfy: Ensure the answer explains that it refers to the output of the `_reasoning` function.",
+          "weight": 2
+        },
+        {
+          "key": "avoid_incomplete_solutions",
+          "description": "Requirement: The answer must not provide incomplete or vague solutions. How to satisfy: Check that the answer does not leave out critical methods or explanations related to obtaining reasoning information.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric focuses on ensuring that answers are technically accurate and complete, specifically addressing the methods to retrieve reasoning information."
+    },
+    "url": "https://github.com/agentscope-ai/agentscope/issues/779",
+    "created_at": "2025-09-17T05:35:57Z",
+    "updated_at": "2025-09-17T10:03:12Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 755,
+    "repo": "agentscope-ai/agentscope",
+    "title": "Agent streaming output + fastapi",
+    "body": "Sorry to bother you~ When using ReActAgent for streaming output, it can only print out the stream response in the terminal. How can I capture these chunks? I want to create an interface and use SSE to stream them back to the frontend. It seems I can't receive streaming chunks like handling the streaming return of DashScopeChatModel: async for chunk in response.",
+    "comments": "python\nasync def pre_print_to_request(\n    self: AgentBase,\n    kwargs: dict[str, Any],\n) -> dict[str, Any]:\n    msg: Msg = deepcopy(kwargs[\"msg\"])\n    last = kwargs[\"last\"]\n    user = user_context.get()\n    await queue_dict[user].put(msg)\n    return {**kwargs}\n\nReActAgent.register_class_hook(\"pre_print\",\"pre_print_to_request\", pre_print_to_request)\n\nasync def chunk_generator() -> AsyncGenerator[str, None]:\n    user = user_context.get()\n    while True:\n        chunk: Msg = await queue_dict[user].get()\n        if chunk is None:  # End signal\n            break\n        yield f\"event: message\\ndata: {json.dumps(chunk.to_dict())}\\n\\n\".encode(\"utf-8\")\n    yield \"event: complete\\ndata: [DONE]\\n\\n\".encode(\"utf-8\")\n    queue_dict[user].task_done()",
+    "llm_analysis": {
+      "correct_answer": "To implement streaming output with FastAPI using ReActAgent, you can create a chunk generator that yields messages as they are processed. Use an async generator to handle the streaming response, and ensure that you have a mechanism to interrupt the agent's processing when needed. Here's an example implementation:\n\n```python\nasync def chunk_generator() -> AsyncGenerator[str, None]:\n    user = user_context.get()\n    while True:\n        chunk: Msg = await queue_dict[user].get()\n        if chunk is None:  # termination signal\n            break\n        yield f\"event: message\\ndata: {json.dumps(chunk.to_dict())}\\n\\n\".encode(\"utf-8\")\n    yield \"event: complete\\ndata: [DONE]\\n\\n\".encode(\"utf-8\")\n    queue_dict[user].task_done()\n```\n\nAdditionally, implement an interrupt endpoint in your FastAPI application to allow clients to stop the agent's processing:\n\n```python\n@app.route('/api/interrupt', methods=['GET'])\nasync def interrupt():\n    await agent.interrupt()\n```\n\nMake sure to handle the interaction between the frontend and backend appropriately to support the interrupt functionality.",
+      "reasoning_of_answer": "The correct answer was derived from the provided comments and code snippets that discussed how to implement streaming output with FastAPI and ReActAgent. The solution includes a chunk generator for streaming messages and an interrupt endpoint for handling client requests to stop processing. This covers the user's requirement for streaming responses and the ability to interrupt the agent.",
+      "scoring_rubric": [
+        {
+          "key": "chunk_generator_implementation",
+          "description": "Requirement: The answer must include a correctly implemented async generator for streaming output. How to satisfy: Verify that the answer provides a function that yields messages as they are processed, using 'async def' and 'yield'.",
+          "weight": 3
+        },
+        {
+          "key": "interrupt_endpoint",
+          "description": "Requirement: The answer must provide a method to interrupt the agent's processing. How to satisfy: Check for the inclusion of an endpoint in the FastAPI application that calls 'agent.interrupt()'.",
+          "weight": 3
+        },
+        {
+          "key": "error_handling",
+          "description": "Requirement: The answer must address error handling in the streaming process. How to satisfy: Look for code that captures exceptions and sends error messages through the stream.",
+          "weight": 2
+        },
+        {
+          "key": "frontend_interaction",
+          "description": "Requirement: The answer must explain how the frontend interacts with the backend for streaming and interrupt functionality. How to satisfy: Ensure the answer describes the communication method (e.g., HTTP requests or WebSocket) used for sending interrupt signals.",
+          "weight": 2
+        },
+        {
+          "key": "code_references",
+          "description": "Requirement: The answer must reference relevant code or documentation for clarity. How to satisfy: Check for links to official documentation or specific code examples that illustrate the implementation.",
+          "weight": 1
+        },
+        {
+          "key": "avoidance_of_incomplete_code",
+          "description": "Requirement: The answer must not contain incomplete or truncated code snippets. How to satisfy: Ensure that all code provided is complete and functional without any missing parts.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric focuses on technical correctness and completeness, ensuring that future answers address both the streaming output and interrupt functionality effectively."
+    },
+    "url": "https://github.com/agentscope-ai/agentscope/issues/755",
+    "created_at": "2025-09-11T07:48:00Z",
+    "updated_at": "2025-09-28T06:58:10Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 745,
+    "repo": "agentscope-ai/agentscope",
+    "title": "[Feature]: How to ensure memory consistency when concurrently calling await agent(msg)? Does it support session mechanism to isolate context?",
+    "body": "python\nsem_callers = asyncio.Semaphore(3)\n\nfor json_file in define_dir.rglob(\"*.json\"):\n    if json_file.name == \"todolist.json\":\n        continue\n\n    with open(json_file, \"r\") as f:\n        raw_data = json.load(f)\n        function_infos: List[FunctionDefineInfo] = [FunctionDefineInfo(**d) for d in raw_data]\n\n    for func_info in function_infos:\n        async def fetch_callers(func_info_local: FunctionDefineInfo):\n            async with sem_callers:\n                prompt = PromptTemplateLoader.get_composite_template(\"c\", \"callgraph\", \"cg_fetch_find_callers_with_defs\")\n                msg = Msg(\n                    name=\"user\",\n                    content=prompt.render(\n                        file_path=str(json_file),\n                        writing_path=str(callee_dir),\n                        define_info=func_info_local,\n                    ),\n                    role=\"user\",\n                )\n                await agent(msg)  # ← Concurrent execution here\n\n        function_tasks.append(fetch_callers(func_info))",
+    "comments": "python\nshared_memory = InMemoryMemory()\nagent1 = ReActAgent(memory=shared_memory...)\nagent2 = ReActAgent(memory=shared_memory...)",
+    "llm_analysis": {
+      "correct_answer": "When concurrently calling await agent(msg), whether multiple tasks share memory or conversation context depends on how the memory of the agent is instantiated. If multiple agents use the same memory instance, they will share memory. To avoid sharing, a different memory instance should be created for each agent. Additionally, AgentScope supports a session mechanism, which can create independent contexts for each concurrent task. For specific usage methods, please refer to the documentation: https://doc.agentscope.io/zh_CN/tutorial/task_state.html.",
+      "reasoning_of_answer": "The answer was derived from the issue body and comments, which discussed the implications of using shared memory in concurrent agent calls and the existence of a session mechanism in AgentScope. The canonical answer synthesizes these insights into a clear response regarding memory sharing and session support.",
+      "scoring_rubric": [
+        {
+          "key": "memory_sharing",
+          "description": "Requirement: The answer must explain how memory sharing occurs between agents. How to satisfy: Clearly state that if multiple agents use the same memory instance, they will share memory.",
+          "weight": 3
+        },
+        {
+          "key": "avoid_memory_sharing",
+          "description": "Requirement: The answer must provide a solution to avoid memory sharing. How to satisfy: Recommend creating separate memory instances for each agent to prevent shared state.",
+          "weight": 3
+        },
+        {
+          "key": "session_mechanism",
+          "description": "Requirement: The answer must mention the availability of a session mechanism in AgentScope. How to satisfy: Include a reference to the documentation that describes how to use the session mechanism.",
+          "weight": 2
+        },
+        {
+          "key": "reference_documentation",
+          "description": "Requirement: The answer must provide a valid link to the relevant documentation. How to satisfy: Include a URL to the AgentScope documentation that discusses session management.",
+          "weight": 2
+        },
+        {
+          "key": "clarity",
+          "description": "Requirement: The answer must be clear and understandable. How to satisfy: Use straightforward language and avoid technical jargon that may confuse the reader.",
+          "weight": 1
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the importance of understanding memory sharing and session management in concurrent programming with agents, reflecting the core concerns raised in the issue."
+    },
+    "url": "https://github.com/agentscope-ai/agentscope/issues/745",
+    "created_at": "2025-09-09T07:39:31Z",
+    "updated_at": "2025-09-24T02:24:10Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 744,
+    "repo": "agentscope-ai/agentscope",
+    "title": "How AgentScope can be applied to a Retrieval-Augmented Generation (RAG) system",
+    "body": "\nCould you demonstrate how AgentScope can be applied to a Retrieval-Augmented Generation (RAG) system using complex PDFs as input?\nSpecifically, I’d like to see examples with around 10 PDFs that contain mixed content (text, images, flowcharts, and tables).\nIt would also be helpful if the implementation showcased how agents can handle aspects such as memory, prompt engineering, or other customizations — using this RAG system as the foundation.\n",
+    "comments": "We are building the RAG module and it's coming soon. #696 \n\nFor now, you can try to integrate the other RAG implementation in AgentScope (e.g. llamaindex, langchain). For example, wrap the rag functionality into a single function and then retrieve from it at the beginning of each reply process.\ncan u provide me sample example for this\nUpdate: Thanks for your interest. We have finish rebuilding the RAG module. Please refer to our [tutorial](https://doc.agentscope.io/tutorial/task_rag.html) and [example](https://github.com/agentscope-ai/agentscope/tree/main/examples/functionality/rag) for more details.\nThank you\n",
+    "llm_analysis": {
+      "correct_answer": "To apply AgentScope to a Retrieval-Augmented Generation (RAG) system using complex PDFs, you can integrate the RAG functionality by wrapping it into a single function. This function should handle the retrieval of content from the PDFs, which may include text, images, flowcharts, and tables. You can refer to the provided tutorial and example in the AgentScope repository for detailed implementation guidance.",
+      "reasoning_of_answer": "The correct answer was determined by synthesizing the user's request for a demonstration of AgentScope's application in a RAG system with complex PDFs and the subsequent comments that provided links to a tutorial and example. The tutorial and example are essential for understanding the implementation details.",
+      "scoring_rubric": [
+        {
+          "key": "must_have_rag_integration",
+          "description": "Requirement: The answer must demonstrate how to integrate RAG functionality into AgentScope. How to satisfy: Provide a clear explanation of how to wrap RAG functionality into a single function for retrieval from PDFs.",
+          "weight": 3
+        },
+        {
+          "key": "must_have_pdf_handling",
+          "description": "Requirement: The answer must address handling complex PDFs with mixed content. How to satisfy: Include specific details on how to process text, images, flowcharts, and tables from the PDFs.",
+          "weight": 2
+        },
+        {
+          "key": "must_have_reference_material",
+          "description": "Requirement: The answer must reference relevant documentation or examples. How to satisfy: Include links to the tutorial and example provided in the comments for further guidance.",
+          "weight": 2
+        },
+        {
+          "key": "must_not_have_incomplete_solution",
+          "description": "Requirement: The answer must not provide an incomplete or vague solution. How to satisfy: Ensure that the answer fully addresses the user's request without leaving out critical implementation details.",
+          "weight": 3
+        },
+        {
+          "key": "must_not_have_unrelated_content",
+          "description": "Requirement: The answer must not include unrelated or off-topic information. How to satisfy: Focus solely on the application of AgentScope in the context of RAG and complex PDFs.",
+          "weight": 2
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the importance of integration, handling of complex content, and referencing official materials to ensure a comprehensive answer."
+    },
+    "url": "https://github.com/agentscope-ai/agentscope/issues/744",
+    "created_at": "2025-09-09T05:58:32Z",
+    "updated_at": "2025-10-06T04:38:18Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 697,
+    "repo": "agentscope-ai/agentscope",
+    "title": "[Question]: Structured Output Problem",
+    "body": "**Describe the bug**\nWhen using structured output, the model prompts a parameter error the first time `generate_response` is called, then it fills in the necessary `struct field` itself. Is this normal?\n\n**Code**\n\n**Response**",
+    "comments": "python\nimport asyncio\nimport os\n\nfrom pydantic import Field, BaseModel\n\nfrom agentscope.agent import ReActAgent\nfrom agentscope.formatter import DashScopeChatFormatter\nfrom agentscope.message import Msg\nfrom agentscope.model import DashScopeChatModel\n\nclass Model(BaseModel):\n    name: str | None = Field(description=\"The name\", default=None)\n    age: int | None = Field(description=\"The age\", default=None)\n\nagent = ReActAgent(\n    name=\"Friday\",\n    sys_prompt=\"You are a helpful assistant named Friday.\",\n    model=DashScopeChatModel(\n        model_name=\"qwen-max\",\n        api_key=os.environ[\"DASHSCOPE_API_KEY\"],\n    ),\n    formatter=DashScopeChatFormatter(),\n)\n\nasync def main():\n    res = await agent(Msg(\"user\", \"Who are you?\", \"user\"), structured_model=Model)\n    print(\"Structured output:\", res.metadata)\n\nasyncio.run(main())",
+    "llm_analysis": {
+      "correct_answer": "To avoid errors when using structured output in the generate_response function, ensure that the fields in the structured model have default values set appropriately. If fields are set to None, the agent should be able to call generate_response without passing those parameters. Additionally, consider adding prompts to guide the agent on how to provide the required structured output, and implement validation logic using Pydantic to enforce that not both fields can be None.",
+      "reasoning_of_answer": "The answer was derived from the comments where users discussed the behavior of the agent when calling generate_response with structured output. It was noted that setting default values to None can lead to errors, and suggestions were made to improve the structured output handling by using prompts and validation.",
+      "scoring_rubric": [
+        {
+          "key": "default_value_handling",
+          "description": "Requirement: The structured model fields must have appropriate default values. How to satisfy: Check that the fields in the structured model are defined with default values that prevent None from being passed unnecessarily.",
+          "weight": 3
+        },
+        {
+          "key": "prompt_usage",
+          "description": "Requirement: The answer must suggest using prompts to guide the agent's output. How to satisfy: Verify that the answer includes a recommendation to add user messages that clarify the expected output structure.",
+          "weight": 2
+        },
+        {
+          "key": "validation_logic",
+          "description": "Requirement: The answer must include a suggestion for implementing validation logic. How to satisfy: Ensure the answer recommends using Pydantic validators to enforce that not both fields can be None.",
+          "weight": 3
+        },
+        {
+          "key": "error_explanation",
+          "description": "Requirement: The answer must explain the error behavior when default values are None. How to satisfy: Check that the answer describes the issue of the agent reporting errors when fields are not filled due to default values being None.",
+          "weight": 2
+        },
+        {
+          "key": "structured_output_explanation",
+          "description": "Requirement: The answer must clarify the expected behavior of structured output. How to satisfy: Verify that the answer explains how structured output should function correctly without errors.",
+          "weight": 2
+        }
+      ],
+      "notes_of_score": "The rubric focuses on technical correctness related to structured output handling, emphasizing the importance of default values, prompts, and validation logic."
+    },
+    "url": "https://github.com/agentscope-ai/agentscope/issues/697",
+    "created_at": "2025-08-27T02:54:41Z",
+    "updated_at": "2025-08-28T03:26:49Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 631,
+    "repo": "agentscope-ai/agentscope",
+    "title": "Why can't Msg store lists",
+    "body": "Why does ToolResultBlock report an error when there are multiple instances? Don't you test before going live?",
+    "comments": "Please first confirm if there is an issue with your method of use before asking questions. You are missing the id assignment here, which will definitely cause an error.\n> Please first confirm if there is an issue with your method of use before asking questions. You are missing the id assignment here, which will definitely cause an error.\n\n![Image](https://github.com/user-attachments/assets/5e3cd282-3256-451c-9014-7e51c51744ef)\nI only tested after getting an error.\n> > Please first confirm if there is an issue with your method of use before asking questions. You are missing the id attribute here, which will definitely cause an error.\n> \n> ![Image](https://github.com/user-attachments/assets/5e3cd282-3256-451c-9014-7e51c51744ef) I only tested after getting an error.\n\n![Image](https://github.com/user-attachments/assets/c4d63139-c787-4383-8737-3b3b6b85a0dd) Just added this parameter.",
+    "llm_analysis": {
+      "correct_answer": "Ensure that each instance of ToolResultBlock has a unique id attribute to avoid errors.",
+      "reasoning_of_answer": "The issue revolves around an error caused by multiple ToolResultBlock instances lacking unique id attributes. The comments emphasize the necessity of assigning an id to each instance to prevent errors, which leads to the conclusion that the correct answer must address this requirement.",
+      "scoring_rubric": [
+        {
+          "key": "unique_id_assignment",
+          "description": "Requirement: Each ToolResultBlock instance must have a unique id attribute. How to satisfy: Verify that the provided solution includes code examples where each ToolResultBlock has a distinct id assigned.",
+          "weight": 3
+        },
+        {
+          "key": "error_explanation",
+          "description": "Requirement: The answer must explain why the absence of unique ids causes errors. How to satisfy: Check if the answer includes a clear explanation of the relationship between unique ids and error prevention.",
+          "weight": 2
+        },
+        {
+          "key": "test_case_inclusion",
+          "description": "Requirement: The answer should include a test case or example demonstrating the error and its resolution. How to satisfy: Look for a code snippet or example that illustrates the error and how it is resolved by adding unique ids.",
+          "weight": 2
+        },
+        {
+          "key": "clarification_of_toolresultblock",
+          "description": "Requirement: The answer must clarify what ToolResultBlock is and its purpose. How to satisfy: Ensure the answer includes a brief description of ToolResultBlock and its role in the context of the issue.",
+          "weight": 1
+        },
+        {
+          "key": "avoidance_of_unverified_claims",
+          "description": "Requirement: The answer must not make unverified claims about the functionality of ToolResultBlock. How to satisfy: Check that the answer does not include statements that cannot be substantiated by the provided context or documentation.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric focuses on the technical correctness of the answer, emphasizing the importance of unique id assignments and clear explanations to prevent errors."
+    },
+    "url": "https://github.com/agentscope-ai/agentscope/issues/631",
+    "created_at": "2025-06-10T10:40:10Z",
+    "updated_at": "2025-06-10T10:54:14Z",
+    "language": "Python"
+  }
+]

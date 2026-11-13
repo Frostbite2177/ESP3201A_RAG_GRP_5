@@ -1,0 +1,242 @@
+[
+  {
+    "question_id": 1447,
+    "repo": "procrastinate-org/procrastinate",
+    "title": "Suggested patterns for storing job results",
+    "body": "Hi, \nNewbie user here, used celery in the past to manage jobs in my applications.\nIt seems to me that procrastinate doesn’t offer a built-in “results storage” mechanism like some other task queues.\nIt simply executes the job and stores metadata in the Postgres tables, without providing handy access to the job’s return value.\n\nIt's clearly possible to open a new db connection inside the worker to store the results, but this would double the connection count on the DB. Moreover, I am not sure this is the intended usage: is this an acceptable usage pattern, or do you expect to cause any issue?\n\nI'd appreciate if you can point me to documentation I may have missed about storing job results or discuss the issue further, if this an interesting use cases.",
+    "comments": "Hi @coffepowered, it's intended that you store results inside the task when using Procrastinate. In contrast to Celery, with Procrastinate it’s always clear that there’s a PostgreSQL database that can be used for storage 😉. Opening another database connection is generally not a problem, so there’s no need to overcomplicate things.\nHey @medihack  thanks for getting back to me!\n\n> In contrast to Celery, with Procrastinate it’s always clear that there’s a PostgreSQL database that can be used for storage\n\nYes, it is! Celery allows however to set a backend for result storage (e.g. postgres - via sqlalchey- an many others.\nThe 'result backend' is intentended to have a persistent way to store results.\nCan you confirm that such a concept does not exist in procrastinate's design (this is my inderstanding, at least)\n\n> Opening another database connection is generally not a problem, so there’s no need to overcomplicate things.\n\nYes, I am trying to understand how many jobs per second I can expect with my use case on a given RDS instance.\nActually using the existing connection pool does not seem so difficult, this is what I came up with (by adapting some hints).\n\nIt seems to perform fine on my pc, but I am wondering if this has drawbacks I can't see.\nI need ton have persistent storage (postgres would be a bonus!!) **and** be able to consume up to 5000 jobs/minute during peak hours (that means having 40 to _120_ workers), and I am not sure wether I am asking too much to procrastinate/postgres or not.\nSo far my tests are going pretty well however\n\nThanks in advance!\n\n```\n\ndef task_with_persistence_shared_conn(original_func=None, **task_kwargs):\n    \"\"\"\n    Uses Procrastinate's own connection pool\n    This avoids creating a separate connection pool\n    \"\"\"\n    def wrap(func):\n        @functools.wraps(func)\n        async def new_func(context: JobContext, *job_args, **job_kwargs):\n            job_id = context.job.id\n            task_name = context.task.name\n            worker_name = context.worker_name\n            \n            print(f\"[MIDDLEWARE] Worker {worker_name}: Starting job {job_id} ({task_name})\")\n            query_start_template = (\n                \"INSERT INTO job_results (job_id, task_name, status, updated_at) \"\n                \"VALUES (:job_id, :task_name, 'RUNNING', NOW()) \"\n                \"ON CONFLICT (job_id) DO UPDATE SET status = 'RUNNING', updated_at = NOW()\"\n            )\n            query_start = render_query( # renders the query with paramters - use sqlalchemy to provide sanitization\n                query_start_template, job_id=job_id, task_name=task_name\n            )\n            await context.app.connector.execute_query_async(query_start)\n            \n            try:\n                result = func(context, *job_args, **job_kwargs)\n                query_success_template = (\n                    \"UPDATE job_results SET status = 'COMPLETED', result = :result, \"\n                    \"error_message = NULL, updated_at = NOW() WHERE job_id = :job_id\"\n                )\n                query_success = render_query(\n                    query_success_template, result=json.dumps(result), job_id=job_id\n                )\n                await context.app.connector.execute_query_async(query_success)\n\n                \n                print(f\"[MIDDLEWARE] Worker {worker_name}: Job {job_id} completed successfully\")\n                return result\n                \n            except Exception as e:\n                print(f\"[MIDDLEWARE] Worker {worker_name}: Job {job_id} failed: {e}\")\n                error_message = str(e)\n\n                # On failure, update the status to FAILED and record the error message\n                query_fail_template = (\n                    \"UPDATE job_results SET status = 'FAILED', error_message = :error_message, \"\n                    \"updated_at = NOW() WHERE job_id = :job_id\"\n                )\n                query_fail = render_query(\n                    query_fail_template, error_message=error_message, job_id=job_id\n                )\n                await context.app.connector.execute_query_async(query_fail)\n                raise\n\n        # Always pass context and apply the procrastinate task decorator\n        task_kwargs['pass_context'] = True\n        return app.task(**task_kwargs)(new_func)\n\n    if not original_func:\n        return wrap\n    return wrap(original_func)\n\n\n@task_with_persistence_shared_conn(name=\"sum_with_persistence\", pass_context=True, retry=3) # pass context, retry\ndef sum_with_persistence(context: JobContext, a, b):\n\n    return {\"result\": a + b}\n\n```\nI think Procrastinate aims at being simple, and does not take extra steps to ensure it may squeeze the most performance possible. It's great if Procrastinate fits your usecase, and we do have some performance tests to track that we don't have performance regression, but I don't think we generally expect it to perform the best possible way under very high loads.\n\nWe would probably accept contributions towards making it easier to squeeze performance out of the system as long as 1/ it doesn't make the codebase significantly more complex and 2/ it doesn't seem like it would create a huge maintenance burden in the long run.\n\nIn you case, I think your solution should work, but I'd expect you'd be safer just creating your own psycopg pool, and then using it both to create your connector and inside your tasks, so you don't need to tap into procrastinate's internals.\n\nNote that (unless I'm mistaken) procrastinate doesn't keep its pooled connections during the task execution, so you likely won't need more connection to follow that approach (again, unless I'm mistaken)\nHello @ewjoachim, thanks for the detailed response. That's very helpful.\n\nI have a few follow-up questions to make sure I understand correctly:\n\n- Defining \"High Load\": I appreciate the project's focus on simplicity over raw performance. To help me understand the boundaries, what kind of loads you would consider \"high load\"?(e.g., ~Xjobs/minute on a small DB).\n\nI am still trying to fully understand connection Management during Tasks\n\n>(unless I'm mistaken) procrastinate doesn't keep its pooled connections during the task execution\n\nDoes this mean that once a worker picks up a job, it releases its connection back to the Procrastinate pool while the task code (e.g., an await asyncio.sleep() or an API call) is running? If so, that's a crucial detail that I missed. From my tests it seems that connection is kept (purple line)\n\n<img width=\"551\" height=\"741\" alt=\"Image\" src=\"https://github.com/user-attachments/assets/750e02de-b6f8-4d8c-b9df-d0969bb9b3ba\" />\n\n\nRationale for a Separate Pool: Based on that, is your recommendation to create my own psycopg pool mainly for API stability (i.e., not relying on Procrastinate's internals which might change)? Or is there a performance/behavioral difference I should be aware of?\n\nMy main goal here is just to find the most robust way to implement this and see if postgres-based quequing is a a viable alternative for my use case. As a matter of fact, I have tried to benchmark this systematically, managing to run 100k jobs in 8 minutes, on a small DB instance. I've opened the benchmark here, would be super grateful if you can take a look, if you think that could be interesting: https://github.com/coffepowered/procrastinate-jobs \n\n\n\nHello, @ewjoachim , @medihack ,\n\nI ended up going a different route, but after running the test I must say I am honestly amazed by how effective Postgres/Procrastinate is as a queuing system at low/medium scale.\n\n",
+    "llm_analysis": {
+      "correct_answer": "To store job results in Procrastinate, you can use a shared database connection within your task. The provided code demonstrates how to implement a task decorator that utilizes Procrastinate's connection pool to insert job results into a PostgreSQL database. The decorator handles job status updates and error logging appropriately.",
+      "reasoning_of_answer": "The answer is derived from the comments where users discuss the intended usage of Procrastinate for storing job results. The provided code snippet illustrates a practical implementation of this concept, showing how to manage job results using a shared connection without creating additional database connections.",
+      "scoring_rubric": [
+        {
+          "key": "correct_usage_of_connection_pool",
+          "description": "Requirement: The answer must demonstrate the correct usage of Procrastinate's connection pool for storing job results. How to satisfy: Verify that the answer includes code that uses the existing connection pool to manage database interactions without opening new connections.",
+          "weight": 3
+        },
+        {
+          "key": "job_status_handling",
+          "description": "Requirement: The answer must include logic for updating job status in the database. How to satisfy: Check that the provided code contains SQL queries that update the job status to 'RUNNING', 'COMPLETED', or 'FAILED' based on the job execution outcome.",
+          "weight": 2
+        },
+        {
+          "key": "error_logging",
+          "description": "Requirement: The answer must implement error logging for job failures. How to satisfy: Ensure that the code includes a mechanism to log error messages in the database when a job fails, as shown in the provided code.",
+          "weight": 2
+        },
+        {
+          "key": "result_storage",
+          "description": "Requirement: The answer must show how to store the job's return value in the database. How to satisfy: Confirm that the code includes a query to insert or update the job's result in the database after successful execution.",
+          "weight": 3
+        },
+        {
+          "key": "context_usage",
+          "description": "Requirement: The answer must correctly utilize the context parameter in the task function. How to satisfy: Verify that the task function signature includes 'context' and that it is used appropriately within the function to access job-related information.",
+          "weight": 2
+        },
+        {
+          "key": "avoidance_of_new_connections",
+          "description": "Requirement: The answer must avoid suggesting the creation of new database connections for each job. How to satisfy: Check that the answer explicitly states or implies that using the existing connection pool is preferred over creating new connections.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes technical correctness and completeness, focusing on the essential aspects of using Procrastinate for job result storage."
+    },
+    "url": "https://github.com/procrastinate-org/procrastinate/issues/1447",
+    "created_at": "2025-09-05T12:18:21Z",
+    "updated_at": "2025-09-15T13:11:56Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 1415,
+    "repo": "procrastinate-org/procrastinate",
+    "title": "Use queuing lock as debouncer",
+    "body": "> I have a CRUD app with very frequent updates to a resource (within seconds). And I want to send an email 15 minutes after the *last* edit.\n> \n> Am I correct in thinking I need to manually update the database and \"push it back\"? Or is there a built-in way to do this?\n> \n> Thanks for an amazing library (and typed!). \n\n _Originally posted by @silviogutierrez in [#1050](https://github.com/procrastinate-org/procrastinate/issues/1050#issuecomment-2957334544)_\n\nI'm not saying a decision is taken towards going this way, but I'd like for a ticket to be open so we can think about the idea of adding an option at defer time saying which element we want to keep in case of conflict.\n\nI wonder if it would make sense to use `ON CONFLICT DO UPDATE`.",
+    "comments": "I've looked around other background task libraries and this is surprisingly absent. I would have thought it's a more common requirement to only do \"latest of\".\n> I've looked around other background task libraries and this is surprisingly absent. I would have thought it's a more common requirement to only do \"latest of\".\n\nIt's got edge cases that need to be worked out I think. Ex: What would you expect to happen when this runs but a matching job is already in a running state, but was started longer ago than the debounce window?\nGood point, though I think just keep the simplest behavior at that point: it's already running, just queue a new one.\nSo does the new job get the minimum denounce duration, since it started longer than the window, or the maximum, since it's still running? If the task runtime exceeds the denounce window, is the queue expected to delay the next one by the start time or the eventual task end time?\n\nNeeds a state diagram to work out all the cases \nMy take would be:\n\n- queueing locks only apply to `todo` jobs. Once they start running, it's out of scope\n- when a job is defered and shares a queuing lock with another job with the same queuing lock, instead of refusing the defer, we delete the older job, whatever were its attributes (even if it had a different task or different params)\n- the job in the todo state might have a scheduled_at param, or just be waiting for a slot on a worker, it's treated the same. But by deleting the old job and deferring the new one, which might come with its own scheduled_at, we're delaying the job execution until we don't defer anything for some time,\n\nOf course, this could all be handled by user code with a periodic task: when there's a change we want to record, write a row in a table with the date. Every minute, look at all rows in that table, grouped by corresponding item, where the latest row is > 15 min ago, craft and send the email and delete the corresponding rows (as atomically as can be, ensure that the rows that get deleted are the rows that were read, not the ones that might have been created in the meantime)\n> Of course, this could all be handled by user code with a periodic task: when there's a change we want to record, write a row in a table with the date. Every minute, look at all rows in that table, grouped by corresponding item, where the latest row is > 15 min ago, craft and send the email and delete the corresponding rows (as atomically as can be, ensure that the rows that get deleted are the rows that were read, not the ones that might have been created in the meantime)\n\nThat is how I would approach it.\nIt is simple and even allows to send batch notifications.\n> It is simple and even allows to send batch notifications.\n\nYes, I think the whole point of debouncing was to allow batches. [EDIT]: ah, I guess you mean \"by using this system, you know by design what needs to be included in the batch, whereas with the simple debouncing system, you would only know that something changed, but you wouldn't know what has changed unless you store it elsewhere\". Yes, that's true too.\n\nAnother nice property of this system is that if there's a bug where emails aren't sent (and as long as rows aren't being deleted, as we said, atomic), and then you fix it, it will self-repair. Whereas with debounced tasks, you'll need to somehow-manually retry the tasks.",
+    "llm_analysis": {
+      "correct_answer": "To implement a debouncer for sending emails after the last edit, you can create a periodic task that checks a database table for updates. When a change occurs, insert a row with the current timestamp. Every minute, the task should check for rows where the latest timestamp is older than 15 minutes, send the email, and delete those rows atomically to ensure consistency.",
+      "reasoning_of_answer": "The answer is derived from the user's need to send an email after the last edit with a debounce mechanism. The comments suggest a solution involving periodic checks and atomic operations, which aligns with the user's requirements. The proposed method is simple, allows for batch notifications, and addresses potential issues with email sending failures.",
+      "scoring_rubric": [
+        {
+          "key": "correct_logic",
+          "description": "Requirement: The answer must provide a logical approach to implement the debouncer. How to satisfy: Verify that the answer outlines a method for tracking changes and sending emails after a delay.",
+          "weight": 3
+        },
+        {
+          "key": "periodic_task",
+          "description": "Requirement: The answer must include the use of a periodic task to check for updates. How to satisfy: Check if the answer mentions a mechanism to regularly check the database for changes.",
+          "weight": 2
+        },
+        {
+          "key": "database_operations",
+          "description": "Requirement: The answer must detail how to handle database operations atomically. How to satisfy: Ensure the answer explains how to insert, check, and delete rows in a way that maintains data integrity.",
+          "weight": 3
+        },
+        {
+          "key": "email_sending_logic",
+          "description": "Requirement: The answer must specify how to send emails based on the conditions described. How to satisfy: Confirm that the answer includes a clear method for sending emails after the debounce period.",
+          "weight": 2
+        },
+        {
+          "key": "batch_notifications",
+          "description": "Requirement: The answer must address the capability of sending batch notifications. How to satisfy: Verify that the answer mentions the ability to handle multiple notifications in one go.",
+          "weight": 1
+        },
+        {
+          "key": "avoid_manual_retries",
+          "description": "Requirement: The answer must avoid suggesting manual retries for email sending. How to satisfy: Ensure the answer does not propose a solution that requires manual intervention for failed email sends.",
+          "weight": 3
+        },
+        {
+          "key": "no_conflicting_jobs",
+          "description": "Requirement: The answer must not suggest conflicting job handling that could lead to data inconsistency. How to satisfy: Check that the answer does not propose a method that allows multiple jobs to interfere with each other.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes technical correctness and completeness, focusing on the logic of the solution, database operations, and the handling of email notifications."
+    },
+    "url": "https://github.com/procrastinate-org/procrastinate/issues/1415",
+    "created_at": "2025-06-13T11:27:35Z",
+    "updated_at": "2025-06-15T20:34:41Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 1331,
+    "repo": "procrastinate-org/procrastinate",
+    "title": "Periodic task lifecycle management",
+    "body": "For various reasons, I was looking for a way to \"delete a periodic task\" which caused me to look into what happens when a period task is scheduled. This mostly lead me to the [`periodic.py`](https://github.com/procrastinate-org/procrastinate/blob/main/procrastinate/periodic.py) \n\nIf I read the implementation correctly, once the function is removed, or at the minimum the decorator is removed from the function, it will no longer be put into the periodic registry when the app/worker starts.   This will prevent it from scheduled new instances of that task, but happens to previously scheduled job, for example, if I have a daily task and I remove it, based on my current understanding, it seems like there will be a stray Job left over and one more execution will happen tomorrow.  If the function is removed, the worst case is that the Job fails quickly. \n\nIt also seems like this might occur if you modify the cron schedule for a task. This one seems like it would be a potential bug. \n\nI was wondering what is the recommended way to handle changes to a periodic task? Have a overlooked something?\n",
+    "comments": "Hi @LucasRoesler. You are correct in your assumptions. There is no automatic cancellation of jobs when a task or periodic task is removed. But it should be easy to write a script that looks for jobs of a specific (deleted) task and cancel all those jobs.\nOk, glad I didn't misread it. I guess it would be as simple as (in pseudo-code)\n\n```\ndeprecated_tasks = [\"...\", ]\nfor name in deprecated_tasks:\n   jobs = app.job_manager.list_jobs(task=name)\n   for j in jobs:\n      app.job_manager.cancel_job_by_id(job_id=j.id, delete_job=True)\n```\n\nBut this would require maintaining a list of deprecated tasks. If I wanted to make this generic, I would probably need to do something like \n\n```\ntasks_in_db = set(app.job_manager.list_tasks())\nknown_tasks = set(app.tasks.keys())\nstale_tasks = tasks_in_db - known_tasks\nfor name in stale_tasks:\n   jobs = app.job_manager.list_jobs(task=name)\n   for j in jobs:\n      app.job_manager.cancel_job_by_id(job_id=j.id, delete_job=True)\n```\n\nBut neither of these really work for the \"rescheduling a periodic job\" use case, because that task would still be known to the registry. It seems like this is best handled during the periodic defer, it should look for existing unfinished jobs for that tasks, remove it, and then do the rest of the normal defer process.\n\n@LucasRoesler I am not sure this is how the periodic worker schedules tasks.\n\nIn the example of a daily task, it should not be creating a job to start a day in the future but would instead defer the job at the time it should have started (or up to a certain delay).\n\nFor instance, say a job is scheduled at 6am daily. The periodic worker would wait until at least 6am to defer a job for that day.\n\nRemoving a periodic task should in theory not cause an issue unless a job for that task is deferred and the worker is stopped before the job could be processed.\nOh yeah, you are totally right and I definitely read through that and I recall noting it, I don't know why that other idea got stuck in my head. Thanks for clarifying it 🙏\nYep, what @onlyann said. \n\n> Removing a periodic task should in theory not cause an issue unless a job for that task is deferred and the worker is stopped before the job could be processed.\n\nAnother possibility is if you have a very long backlog. One task might be deferred at 6pm but actually executed hours (or days or more) later, so if by this time the workers have been redeployed and don't know about the task, they will error \n\n> If the function is removed, the worst case is that the Job fails quickly.\n\nYeah, you'll get a [TaskNotFound](https://procrastinate.readthedocs.io/en/stable/reference.html#procrastinate.exceptions.TaskNotFound)",
+    "llm_analysis": {
+      "correct_answer": "To handle changes to a periodic task, you should write a script that identifies jobs associated with a deleted task and cancels them. This can be done by maintaining a list of deprecated tasks or by comparing tasks in the database with known tasks. If a task is removed, ensure that any unfinished jobs are canceled to prevent errors during execution.",
+      "reasoning_of_answer": "The answer is derived from the user's inquiry about managing periodic tasks and the subsequent comments that clarify the behavior of the system when tasks are removed. The comments provide a concrete approach to canceling jobs associated with deleted tasks, which is essential for managing periodic task lifecycles effectively.",
+      "scoring_rubric": [
+        {
+          "key": "must_have_script_for_cancellation",
+          "description": "Requirement: The answer must include a script or pseudo-code for canceling jobs of deleted periodic tasks. How to satisfy: Verify that the answer provides a clear example of how to list and cancel jobs associated with deprecated tasks.",
+          "weight": 3
+        },
+        {
+          "key": "must_have_task_management_strategy",
+          "description": "Requirement: The answer must outline a strategy for managing periodic tasks when they are removed. How to satisfy: Check that the answer discusses maintaining a list of deprecated tasks or comparing tasks in the database with known tasks.",
+          "weight": 2
+        },
+        {
+          "key": "must_have_error_handling",
+          "description": "Requirement: The answer must mention potential errors that can occur if jobs are not canceled. How to satisfy: Ensure the answer references the TaskNotFound error or similar issues that arise from not handling job cancellations properly.",
+          "weight": 2
+        },
+        {
+          "key": "must_not_have_incomplete_solutions",
+          "description": "Requirement: The answer must not provide incomplete or vague solutions. How to satisfy: Verify that the answer does not suggest simply removing the task without addressing job cancellation.",
+          "weight": 3
+        },
+        {
+          "key": "must_not_have_unsupported_assumptions",
+          "description": "Requirement: The answer must not make unsupported assumptions about the behavior of the periodic worker. How to satisfy: Check that the answer does not claim that removing a task automatically cancels jobs without providing a clear explanation.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the importance of providing a complete solution for managing periodic tasks, including error handling and avoiding unsupported assumptions."
+    },
+    "url": "https://github.com/procrastinate-org/procrastinate/issues/1331",
+    "created_at": "2025-02-18T17:04:38Z",
+    "updated_at": "2025-02-23T15:06:22Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 1198,
+    "repo": "procrastinate-org/procrastinate",
+    "title": "Workflows, multiple tasks depending on one another",
+    "body": "Hi. Let's say I need job to run only if 2 others (created before) are completed successfully, AFAIU there's no support for this.\r\n\r\nCan I extend a procrastinate job queue table myself to add array field column with required jobs ID list and I could check if all of them are finished inside my task manually or with some decorator? In other words, is having extra columns supported and won't break standard flows?",
+    "comments": "> AFAIU there's no support for this\r\n\r\nI think you're right\r\n\r\n> is having extra columns supported and won't break standard flows?\r\n\r\nI don't think it's a good idea, but I can't tell you exacty what will fail. I think you should rather do this on a different table, but you can add a foreign key as long as you handle the cases where the job will be deleted (so `ON DELETE CASCADE` I guess)\nAssuming a task C needs to run when task A and B complete, introduce an orchestrator task O that defers task A and B, waits for both of them to complete and then defers task C.\n\nWould that work in your scenario?\nHm, I'm not sure the \"Orchestrator task\" is a concept I like. If the worker running it crashes, the whole set of task will be completely broken.\nIt is not foolproof but might be good enough.\nA variant of this (still imperfect) is to defer A and B, and then defer the task O that receives the job ids it should wait for. Task O waits for those job ids to complete before deferring task C.\n\nThis way, the task O can be retried if the worker crashes. \nSo the way Chancy does this seems to work (1b+ workflows so far), and looking at the model for Procastinate I don't see why something similar wouldn't be an option if there's no issue with adding more tables. It can be done in a way that avoids modifying the existing jobs and instead just builds on top of them.\r\n\r\nTwo tables are used, the first to track the workflows themselves:\r\n\r\n```\r\nCREATE TABLE {workflows} (\r\n                    id UUID PRIMARY KEY,\r\n                    name TEXT NOT NULL,\r\n                    state TEXT NOT NULL,\r\n                    created_at TIMESTAMPTZ DEFAULT NOW(),\r\n                    updated_at TIMESTAMPTZ DEFAULT NOW()\r\n                )\r\n```\r\n\r\nAnd another to track each step inside of a workflow, which will be updated with the ID of the job once it's started (job_id becomes a bigserial for procastinate, state becomes status, etc):\r\n\r\n```\r\nCREATE TABLE {workflow_steps} (\r\n                    id SERIAL PRIMARY KEY,\r\n                    workflow_id UUID REFERENCES {workflows}(id)\r\n                        ON DELETE CASCADE,\r\n                    step_id TEXT NOT NULL,\r\n                    job_data JSON NOT NULL,\r\n                    dependencies JSON NOT NULL,\r\n                    job_id UUID,\r\n                    created_at TIMESTAMPTZ DEFAULT NOW(),\r\n                    updated_at TIMESTAMPTZ DEFAULT NOW()\r\n                )\r\n``` \r\n\r\nPeriodically, incomplete workflows are picked up and processed:\r\n\r\n```\r\nwhile await self.sleep(self.polling_interval):\r\n            await self.wait_for_leader(worker)\r\n            workflows = await self.fetch_workflows(\r\n                chancy,\r\n                states=[\"pending\", \"running\"],\r\n                limit=self.max_workflows_per_run,\r\n            )\r\n            for workflow in workflows:\r\n                await self.process_workflow(chancy, workflow)\r\n```\r\n\r\nFetching the workflows and their steps can be done in a single quick query thanks to json_build_object:\r\n\r\n```\r\nSELECT \r\n                            w.id, \r\n                            w.name, \r\n                            w.state,\r\n                            w.created_at,\r\n                            w.updated_at,\r\n                            COALESCE(json_agg(\r\n                                json_build_object(\r\n                                    'step_id', ws.step_id,\r\n                                    'job_data', ws.job_data,\r\n                                    'dependencies', ws.dependencies,\r\n                                    'state', j.state,\r\n                                    'job_id', ws.job_id\r\n                                )\r\n                            ), '[]'::json) as steps\r\n                        FROM {workflows} w\r\n                        LEFT JOIN {workflow_steps} ws ON w.id = ws.workflow_id\r\n                        LEFT JOIN {jobs} j ON ws.job_id = j.id\r\n                        WHERE (\r\n                            %(states)s::text[] IS NULL OR\r\n                            w.state = ANY(%(states)s::text[])\r\n                        ) AND (\r\n                            %(ids)s::uuid[] IS NULL OR\r\n                            w.id = ANY(%(ids)s::uuid[])\r\n                        )\r\n                        GROUP BY w.id, w.name, w.state\r\n                        LIMIT {limit}\r\n```\r\n\r\nAnd then the process to progress a workflow becomes trivial, ~15 lines, https://github.com/TkTech/chancy/blob/main/chancy/plugins/workflow/__init__.py#L340. `job_data` on each step contains the serialized job to be inserted into the job table like any normal job after all the dependencies are met.\r\n\r\nSince procastinate doesn't have a leadership node, we'd add a `locked_at` column to the workflow table and do a SELECT...FOR UPDATE with a timeout and let every worker take a shot at periodically progressing workflows.\r\n\r\nThis way job's don't know they are part of a workflow, no persistent job is needed, just a periodic one, and the only relationship between the two is the job ID and state. Since this implements DAG-based workflows, it becomes easy to re-implement Celery's Chain and Group as well - 6 lines.\nThanks for all the answers folks. I'll try to to investigate more and come up with something.\r\nI was thinking about celery too, but as far as I understand there's also no easy way to make jobs scheduled from different places:\r\n- depend on bunch of other jobs that were scheduled before.\r\n- maintain locking by unique id to prevent some of them from running concurrently.",
+    "llm_analysis": {
+      "correct_answer": "To implement a workflow where a task runs only after two other tasks have completed, you can create two tables: one for workflows and another for workflow steps. The workflows table tracks the overall workflow state, while the workflow_steps table tracks each step, including job IDs and dependencies. You can periodically check for incomplete workflows and process them accordingly. Ensure to handle job dependencies using JSON fields for flexibility. This approach avoids modifying existing jobs and builds on top of them, allowing for a clean separation of concerns.",
+      "reasoning_of_answer": "The correct answer was derived from the detailed explanation provided in the comments, particularly focusing on the proposed solution involving two tables for workflows and workflow steps. The answer captures the essence of managing task dependencies while maintaining the integrity of the existing job queue system.",
+      "scoring_rubric": [
+        {
+          "key": "workflow_structure",
+          "description": "Requirement: The answer must include a clear structure for managing workflows. How to satisfy: The answer should describe the creation of a workflows table and a workflow_steps table, detailing their relationships.",
+          "weight": 3
+        },
+        {
+          "key": "dependency_management",
+          "description": "Requirement: The answer must address how to manage task dependencies. How to satisfy: The answer should explain the use of JSON fields to track dependencies and job IDs within the workflow_steps table.",
+          "weight": 3
+        },
+        {
+          "key": "periodic_processing",
+          "description": "Requirement: The answer must include a mechanism for processing incomplete workflows. How to satisfy: The answer should describe a method for periodically checking and processing workflows based on their state.",
+          "weight": 2
+        },
+        {
+          "key": "job_integrity",
+          "description": "Requirement: The answer must ensure that existing jobs are not modified. How to satisfy: The answer should state that the solution builds on top of existing jobs without altering them.",
+          "weight": 2
+        },
+        {
+          "key": "error_handling",
+          "description": "Requirement: The answer must consider error handling for job failures. How to satisfy: The answer should mention strategies for handling cases where jobs are deleted or fail during processing.",
+          "weight": 2
+        },
+        {
+          "key": "performance_optimization",
+          "description": "Requirement: The answer must include performance considerations for querying workflows. How to satisfy: The answer should mention the use of efficient SQL queries to fetch workflows and their steps.",
+          "weight": 1
+        },
+        {
+          "key": "avoidance_of_bad_practices",
+          "description": "Requirement: The answer must not suggest modifying existing job structures inappropriately. How to satisfy: The answer should explicitly state that the proposed solution avoids modifying existing jobs and instead builds on them.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the importance of structuring workflows and managing dependencies effectively while ensuring the integrity of existing jobs."
+    },
+    "url": "https://github.com/procrastinate-org/procrastinate/issues/1198",
+    "created_at": "2024-09-18T10:13:08Z",
+    "updated_at": "2025-01-18T15:07:17Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 1178,
+    "repo": "procrastinate-org/procrastinate",
+    "title": "\"CREATE EXTENSION\" statement broke some providers",
+    "body": "Hello there;\r\n\r\nI tried to use Xata with procrastinate. But Xata disabled CREATE EXTENSION usage for their security. So \"CREATE EXTENSION IF NOT EXISTS plpgsql WITH SCHEMA pg_catalog;\" statement which is the first line of first migration is not passed well. Xata already enabled plpgsql extension, so this statement does not actually change anything for Xata. Is there a way to check extension first and then try to apply activate? I believe this solution is not just for Xata, maybe there are too many other providers already disabled create extension statement.\r\n\r\nThanks for help :)",
+    "comments": "Ok looks like Xata is not allow also \"create function\" statement, so my request is not cover the solution :/\n> Is there a way to check extension first and then try to apply activate?\r\n\r\nYes but... That's called `CREATE EXTENSION IF NOT EXISTS` :D\r\nMaybe it's on Xata's side to not block `CREATE EXTENSION IF NOT EXISTS` when the extension already exists :thinking: \r\n\r\nI think the best way forward from there would be to get the schema code (`procrastinate schema --read`), remove the offending line and execute the rest ?\r\n\r\n> Ok looks like Xata is not allow also \"create function\" statement\r\n\r\nAh. Maybe it's fundamentally incompatible with procrastinate then :/ We do create a few functions & triggers. If they don't let you do that, then... I'm not sure what to suggest.\nOnly I can suggest for now, as a Django developer, django checks first extension's availability. So if the extension is already activated then django does not execute \"Create Extension\" command. This is a good behavior i guess. \r\n\r\nHere is the django way: https://github.com/django/django/blob/aa5293068782dfa2d2173c75c8477f58a9989942/django/contrib/postgres/operations.py#L27\r\n\r\nAnyway thanks for your response @ewjoachim  :)\nHere's the associated ticket on the Django tracker https://code.djangoproject.com/ticket/31615\r\n\r\nIt seems more compelling an argument that `CREATE EXTENSION` (often) requires superuser, though I can't get a definitive answer whether plpgsql actually does or not.\r\n\r\nIn contrast, CREATE FUNCTION only requires USAGE.\nWould you be interested in making a PR ?\nIt might be possible to do it all in the postgresql migration:\r\nhttps://stackoverflow.com/questions/59037549/try-catch-equivalent-in-postgres\nNoting that I hit this issue as well in a CosmosDB which does not support the create extension command. Using Aurora DB worked without an issue. \nHi there,\n\nWe are encountering the same issue while using PostgreSQL in Azure. After some investigation, we found a workaround:\n\nWe replaced the migration script with a copy of the script, stripping out the line:\nCREATE EXTENSION IF NOT EXISTS plpgsql WITH SCHEMA pg_catalog;\n\nThis resolved the issue for us, but it seems more like a temporary fix rather than a proper solution.\n\nIt would be nice if someone on the procrastinate team could provide any updates on this issue, any plans to fix this in the future? or suggest a better workaround,\n\nThanks!\n@wahajahmedkhan Unfortunately, I have not yet had the time to look into it. It is on my TODO, but it will take several weeks as it is not a high priority for me. I am not using Azure, so it is hard to reproduce. If there is an easy fix (maybe with the [mentioned try-catch PostgreSQL equivalent](https://github.com/procrastinate-org/procrastinate/issues/1178#issuecomment-2565618602)), would you mind fixing it and creating a PR?",
+    "llm_analysis": {
+      "correct_answer": "To check if an extension is already enabled before attempting to create it, you can use the following approach in your migration script: \n\n```sql\nDO $$ BEGIN\n    IF NOT EXISTS (SELECT 1 FROM pg_extension WHERE extname = 'plpgsql') THEN\n        CREATE EXTENSION IF NOT EXISTS plpgsql WITH SCHEMA pg_catalog;\n    END IF;\nEND $$;\n```",
+      "reasoning_of_answer": "The answer was derived from the user's request to find a way to check for an extension's existence before executing the 'CREATE EXTENSION' command. The provided SQL block uses a conditional statement to check if the extension is already present in the 'pg_extension' table, which directly addresses the user's concern about compatibility with providers like Xata that disable 'CREATE EXTENSION'.",
+      "scoring_rubric": [
+        {
+          "key": "check_extension_exists",
+          "description": "Requirement: The answer must include a method to check if the extension exists. How to satisfy: The answer should provide SQL code that queries the 'pg_extension' table to verify the existence of the extension before attempting to create it.",
+          "weight": 3
+        },
+        {
+          "key": "correct_sql_syntax",
+          "description": "Requirement: The SQL code provided must be syntactically correct. How to satisfy: The SQL code should compile and run without errors in a PostgreSQL environment.",
+          "weight": 3
+        },
+        {
+          "key": "address_provider_constraints",
+          "description": "Requirement: The answer must acknowledge the constraints imposed by providers like Xata. How to satisfy: The answer should explicitly mention the limitations of using 'CREATE EXTENSION' in environments where it is disabled.",
+          "weight": 2
+        },
+        {
+          "key": "provide_workaround",
+          "description": "Requirement: The answer must suggest a workaround for environments that do not support 'CREATE EXTENSION'. How to satisfy: The answer should include a practical solution, such as modifying the migration script to remove the 'CREATE EXTENSION' line.",
+          "weight": 2
+        },
+        {
+          "key": "reference_to_django",
+          "description": "Requirement: The answer should reference existing solutions or practices from well-known frameworks like Django. How to satisfy: The answer should include a citation to the Django repository or documentation that demonstrates how Django handles extension checks.",
+          "weight": 1
+        }
+      ],
+      "notes_of_score": "The rubric focuses on technical correctness and completeness, ensuring that future answers address the specific needs of users facing similar issues with PostgreSQL extensions."
+    },
+    "url": "https://github.com/procrastinate-org/procrastinate/issues/1178",
+    "created_at": "2024-09-03T23:27:39Z",
+    "updated_at": "2025-01-27T23:13:57Z",
+    "language": "Python"
+  }
+]

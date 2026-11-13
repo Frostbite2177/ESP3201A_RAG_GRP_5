@@ -1,0 +1,207 @@
+[
+  {
+    "question_id": 1115,
+    "repo": "sissbruecker/linkding",
+    "title": "How to efficiently detect deleted items via API",
+    "body": "I now use added_since/modified_since to update my cache (Thanks for the addition) . This all works, except for detecting deleted items.\n\nIs there a way to detect these without having to query the complete list?\n\nI also asked the question before, but issue got closed: https://github.com/sissbruecker/linkding/issues/899#issuecomment-2901188350. Apologies if you don't want a new issue or if  I am overlooking something.\n\n\n\nVersion \t1.41.0 (latest)",
+    "comments": "There is no other way to detect deleted bookmarks. These get deleted from the database, so there would be no way to query for them. There also isn't an audit trail or similar that keeps a record of what happened.\nAny solution in the planning for this?  Even a way to know I need to do a full reload would be sufficient.\n\n\nNo plans",
+    "llm_analysis": {
+      "correct_answer": "To efficiently detect deleted items via API, you currently cannot directly query for deleted bookmarks as they are removed from the database without an audit trail. The only way to know about deletions is to perform a full reload of the data.",
+      "reasoning_of_answer": "The answer was derived from the issue body and comments, which clearly state that deleted items cannot be detected through the API since they are not stored in a way that allows for querying. The user also expressed a need for a solution to detect deletions, but the comments confirm that no such functionality exists.",
+      "scoring_rubric": [
+        {
+          "key": "must_have_direct_detection",
+          "description": "Requirement: The answer must state that there is no direct way to detect deleted items via the API. How to satisfy: Verify that the answer explicitly mentions the absence of a method to query deleted items.",
+          "weight": 3
+        },
+        {
+          "key": "must_have_full_reload_solution",
+          "description": "Requirement: The answer must mention that a full reload is necessary to detect deletions. How to satisfy: Check if the answer includes the need for a full reload to ascertain deletions.",
+          "weight": 2
+        },
+        {
+          "key": "must_not_have_fabricated_solutions",
+          "description": "Requirement: The answer must not suggest any non-existent methods for detecting deletions. How to satisfy: Ensure the answer does not propose any solutions that contradict the information provided in the comments.",
+          "weight": 3
+        },
+        {
+          "key": "must_have_reference_to_comments",
+          "description": "Requirement: The answer must reference the lack of an audit trail or similar mechanism. How to satisfy: Confirm that the answer includes a mention of the absence of an audit trail for deleted items.",
+          "weight": 1
+        }
+      ],
+      "notes_of_score": "The rubric focuses on the technical limitations of the API regarding deleted items and ensures that answers do not mislead users about possible solutions."
+    },
+    "url": "https://github.com/sissbruecker/linkding/issues/1115",
+    "created_at": "2025-07-01T20:01:36Z",
+    "updated_at": "2025-07-03T06:44:24Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 988,
+    "repo": "sissbruecker/linkding",
+    "title": "LD_SUPERUSER_NAME and OIDC not compatible",
+    "body": "### Version\n\nRunning `latest-plus` (1.38.0)\n\n### Background\n\nOn a blank install I ran docker as follows, notable: `OIDC` configured and `LD_SUPERUSER_NAME` configured. The LD_SUPERUSER_NAME matches that of my user in my OIDC provider (Authentik). When I attempt to log in once the service is started, I get a server 500 error (user already exists).\n\nI was under the impression that leaving LD_SUPERUSER_PASSWORD blank would work for both OIDC and for Proxy Auth (documentation explicitly calls out proxy auth). Guessing that OIDC follows a different flow and *always* creates a user.\n\n> LD_SUPERUSER_PASSWORD\n> \n> Values: String | Default = None\n> \n> The password for the initial superuser. When left undefined, the superuser will be created without a usable password, which means the user can not authenticate using credentials / through the login form, and can only be authenticated using proxy authentication (see LD_ENABLE_AUTH_PROXY).\n\n<details>\n<summary>Container Run Command</summary>\n\n```sh\nexec podman  \\\n  run \\\n  --rm \\\n  --name=linkding \\\n  --log-driver=journald \\\n  --cidfile=/run/podman-linkding.ctr-id \\\n  --cgroups=no-conmon \\\n  --sdnotify=conmon \\\n  -d \\\n  --replace \\\n  -e LD_DB_DATABASE=linkding \\\n  -e LD_DB_ENGINE=postgres \\\n  -e LD_DB_HOST=xxx \\\n  -e LD_DB_PORT=5432 \\\n  -e LD_DB_USER=linkding \\\n  -e LD_ENABLE_OIDC=True \\\n  -e LD_SERVER_PORT=9090 \\\n  -e LD_SUPERUSER_NAME=tebriel@frodux.in \\\n  -e OIDC_OP_AUTHORIZATION_ENDPOINT=https://auth.xxx/application/o/authorize/ \\\n  -e OIDC_OP_JWKS_ENDPOINT=https://auth.xxx/application/o/linkding/jwks/ \\\n  -e OIDC_OP_TOKEN_ENDPOINT=https://auth.xxx/application/o/token/ \\\n  -e OIDC_OP_USER_ENDPOINT=https://auth.xxx/application/o/userinfo/ \\\n  -e OIDC_USERNAME_CLAIM=email \\\n  -e OIDC_VERIFY_SSL=True \\\n  --env-file /run/agenix/linkding-openid.env \\\n  -p 9090:9090/tcp \\\n  -v /var/lib/linkding:/etc/linkding/data \\\n  sissbruecker/linkding@sha256:7becc0680a5e7e4012bd0bd4232ded6eb2cc86fcc527f961f17f9b586d8011dc\n```\n\n</details>\n\n<details>\n<summary>Error Logs</summary>\n\n```\n[pid: 16|app: 0|req: 5/11] ::ffff:10.88.0.1 () {62 vars in 1218 bytes} [Thu Feb 13 02:04:40 2025] GET /oidc/callback/?code=b3526892de9443f4b5b5e90bd5ea2a9b&state=xDOEFzcGG4R0vjPc0RU0yZswJvLj9TQZ => generated 145 bytes in 2295 msecs (HTTP/1.0 500) 8 headers in 271 bytes (1 switches on core 1)\n2025-02-13 02:04:42,820 WARNING Not Found: /favicon.ico\n[pid: 16|app: 0|req: 6/12] ::ffff:10.88.0.1 () {60 vars in 1141 bytes} [Thu Feb 13 02:04:42 2025] GET /favicon.ico => generated 179 bytes in 8 msecs (HTTP/1.0 404) 8 headers in 267 bytes (1 switches on core 0)\n[pid: 16|app: 0|req: 7/13] ::ffff:10.88.0.1 () {62 vars in 1036 bytes} [Thu Feb 13 02:11:03 2025] GET / => generated 0 bytes in 9 msecs (HTTP/1.0 302) 9 headers in 280 bytes (1 switches on core 1)\n[pid: 14|app: 0|req: 1/14] ::ffff:10.88.0.1 () {62 vars in 1049 bytes} [Thu Feb 13 02:11:03 2025] GET /login/ => generated 5906 bytes in 187 msecs (HTTP/1.0 200) 11 headers in 509 bytes (1 switches on core 1)\n[pid: 16|app: 0|req: 8/15] ::ffff:10.88.0.1 () {62 vars in 1093 bytes} [Thu Feb 13 02:11:11 2025] GET /oidc/authenticate/ => generated 0 bytes in 15 msecs (HTTP/1.0 302) 10 headers in 796 bytes (1 switches on core 0)\n[pid: 16|app: 0|req: 9/16] ::ffff:10.88.0.1 () {64 vars in 1131 bytes} [Thu Feb 13 02:11:12 2025] GET /oidc/authenticate/ => generated 0 bytes in 15 msecs (HTTP/1.0 302) 10 headers in 796 bytes (1 switches on core 1)\n2025-02-13 02:11:17,627 ERROR Internal Server Error: /oidc/callback/\nTraceback (most recent call last):\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/backends/utils.py\", line 105, in _execute\n    return self.cursor.execute(sql, params)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\npsycopg2.errors.UniqueViolation: duplicate key value violates unique constraint \"auth_user_username_key\"\nDETAIL:  Key (username)=(tebriel@frodux.in) already exists.\n\n\nThe above exception was the direct cause of the following exception:\n\nTraceback (most recent call last):\n  File \"/opt/venv/lib/python3.12/site-packages/django/core/handlers/exception.py\", line 55, in inner\n    response = get_response(request)\n               ^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/core/handlers/base.py\", line 197, in _get_response\n    response = wrapped_callback(request, *callback_args, **callback_kwargs)\n               ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/views/generic/base.py\", line 104, in view\n    return self.dispatch(request, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/views/generic/base.py\", line 143, in dispatch\n    return handler(request, *args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/mozilla_django_oidc/views.py\", line 124, in get\n    self.user = auth.authenticate(**kwargs)\n                ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/views/decorators/debug.py\", line 75, in sensitive_variables_wrapper\n    return func(*func_args, **func_kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/contrib/auth/__init__.py\", line 79, in authenticate\n    user = backend.authenticate(request, **credentials)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/mozilla_django_oidc/auth.py\", line 326, in authenticate\n    return self.get_or_create_user(access_token, id_token, payload)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/mozilla_django_oidc/auth.py\", line 365, in get_or_create_user\n    user = self.create_user(user_info)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/mozilla_django_oidc/auth.py\", line 103, in create_user\n    return self.UserModel.objects.create_user(username, email=email)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/contrib/auth/models.py\", line 162, in create_user\n    return self._create_user(username, email, password, **extra_fields)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/contrib/auth/models.py\", line 156, in _create_user\n    user.save(using=self._db)\n  File \"/opt/venv/lib/python3.12/site-packages/django/contrib/auth/base_user.py\", line 62, in save\n    super().save(*args, **kwargs)\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/models/base.py\", line 892, in save\n    self.save_base(\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/models/base.py\", line 998, in save_base\n    updated = self._save_table(\n              ^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/models/base.py\", line 1161, in _save_table\n    results = self._do_insert(\n              ^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/models/base.py\", line 1202, in _do_insert\n    return manager._insert(\n           ^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/models/manager.py\", line 87, in manager_method\n    return getattr(self.get_queryset(), name)(*args, **kwargs)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/models/query.py\", line 1847, in _insert\n    return query.get_compiler(using=using).execute_sql(returning_fields)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/models/sql/compiler.py\", line 1836, in execute_sql\n    cursor.execute(sql, params)\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/backends/utils.py\", line 79, in execute\n    return self._execute_with_wrappers(\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/backends/utils.py\", line 92, in _execute_with_wrappers\n    return executor(sql, params, many, context)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/backends/utils.py\", line 100, in _execute\n    with self.db.wrap_database_errors:\n         ^^^^^^^^^^^^^^^^^^^^^^^^^^^^\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/utils.py\", line 91, in __exit__\n    raise dj_exc_value.with_traceback(traceback) from exc_value\n  File \"/opt/venv/lib/python3.12/site-packages/django/db/backends/utils.py\", line 105, in _execute\n    return self.cursor.execute(sql, params)\n           ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^\ndjango.db.utils.IntegrityError: duplicate key value violates unique constraint \"auth_user_username_key\"\nDETAIL:  Key (username)=(tebriel@frodux.in) already exists.\n\n[pid: 16|app: 0|req: 10/17] ::ffff:10.88.0.1 () {62 vars in 1218 bytes} [Thu Feb 13 02:11:13 2025] GET /oidc/callback/?code=edeb0c42b5404fcd8e3c2dfff3fbd6b2&state=fASuZ1AGSHHHGpFCpxgRRolJtLRcdb7O => generated 145 bytes in 4187 msecs (HTTP/1.0 500) 8 headers in 271 bytes (1 switches on core 0)\n\n```\n</details>\n\n### Workaround\n\nTo get to a working state I did the following:\n\n1. from the Django console I deleted myself\n2. From the manage.py script I created a new superuser (admin)\n3. From the login Page I used OIDC to log in with my creds (the user I deleted in step 1)\n4. I logged out of that user and then logged back in with admin\n5. From admin's django management page I promoted my OIDC self to superuser\n\n### Expected Behavior\n\nI would expect the superuser env var to work with an OIDC account (especially if no password is set).\n\n\nThanks for reading! Let me know if I missed anything!",
+    "comments": "Yes, those don't quite fit together. The OIDC implementation looks up users by email, which is a separate field. When you create a user with `LD_SUPERUSER_NAME` it sets a user name, but no email. So the OIDC implementation can not find the user and will create a new one. \n\nYou'd first have to create the super user, then change it's email to what you have in the OIDC provider, and only then enable OIDC. Or create a separate super user, promote your OIDC user to admin and remove the initial super user afterwards.\n@sissbruecker ah ok, that makes sense. I had set my `LD_SUPERUSER_NAME` as my email address and since the login name provided by the OIDC provider was the email address I'm guessing that's how they conflicted. I'll write a small blurb for the docs as a PR to at least describe this for the next person that comes along!\nYep, adding something to the docs is probably a good first step. As workflow it make actually make the most sense to not use the superuser env variables and create a user as described here: https://linkding.link/installation/#user-setup. That way you can provide an email address and then OIDC can match that. Still, that needs to be done before logging in the first time with OIDC.\nI'm a bit confused, the error I got was that the username already existed, so it should've matched? Or is it maybe that I hadn't populated the email address in the admin user's model and so it tried to create a new user?\n> I hadn't populated the email address in the admin user's model and so it tried to create a new user?\n\nIt sounds like this one. By default, OIDC uses the email also as username, but since you had already created a user where the username was the same email that failed.\n\nAs mentioned above, matching uses the email field, which is separate from the username. So the best approach is probably to first create a superuser manually through the command linked above, with the email field set to what you have in the OIDC provider. Afterwards you can login through OIDC and it should be able to match that superuser.\n\nMake sense, I think I have enough context to make a coherent docs blurb, thanks!",
+    "llm_analysis": {
+      "correct_answer": "To resolve the issue with LD_SUPERUSER_NAME and OIDC compatibility, first create a superuser manually using the command provided in the documentation, ensuring that the email field matches the email used in your OIDC provider. After creating the superuser, you can then enable OIDC, which will allow the system to correctly match the OIDC user with the superuser based on the email.",
+      "reasoning_of_answer": "The answer was derived from the comments where it was clarified that the OIDC implementation looks up users by email, which is separate from the username set by LD_SUPERUSER_NAME. The correct approach involves creating a superuser with the appropriate email before enabling OIDC to prevent conflicts.",
+      "scoring_rubric": [
+        {
+          "key": "create_superuser",
+          "description": "Requirement: The answer must include instructions to create a superuser manually. How to satisfy: Provide the command or steps to create a superuser as per the documentation.",
+          "weight": 3
+        },
+        {
+          "key": "match_email",
+          "description": "Requirement: The answer must specify that the email of the superuser must match the email in the OIDC provider. How to satisfy: Clearly state that the email field of the superuser should be populated with the same email used in the OIDC configuration.",
+          "weight": 3
+        },
+        {
+          "key": "enable_oidc_after_creation",
+          "description": "Requirement: The answer must indicate that OIDC should be enabled only after creating the superuser. How to satisfy: Explicitly mention that OIDC should be configured after the superuser is created to avoid user conflicts.",
+          "weight": 2
+        },
+        {
+          "key": "avoid_conflict",
+          "description": "Requirement: The answer must address the potential conflict between username and email. How to satisfy: Explain that using the same email for both username and OIDC can cause issues, and recommend using distinct values.",
+          "weight": 2
+        },
+        {
+          "key": "reference_documentation",
+          "description": "Requirement: The answer must reference the relevant documentation for creating a superuser. How to satisfy: Include a link or citation to the specific documentation that provides the command for superuser creation.",
+          "weight": 1
+        },
+        {
+          "key": "omit_incorrect_solutions",
+          "description": "Requirement: The answer must not suggest leaving LD_SUPERUSER_PASSWORD blank as a solution. How to satisfy: Ensure that the answer does not include this approach, as it is incorrect and can lead to authentication issues.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the importance of creating a superuser with the correct email and the sequence of enabling OIDC to prevent conflicts. It also penalizes incorrect solutions that could mislead users."
+    },
+    "url": "https://github.com/sissbruecker/linkding/issues/988",
+    "created_at": "2025-02-13T02:34:24Z",
+    "updated_at": "2025-02-18T21:45:27Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 931,
+    "repo": "sissbruecker/linkding",
+    "title": "Is it possible to disable ublock origin lite?",
+    "body": "Is it possible to disable ublock origin lite when creating HTML snapshots?  See attached screenshot. There are a few sites that the saved snapshot shows the anti-adblocker message like on this site, pnj.com. Thanks!\r\n\r\n\r\n![image](https://github.com/user-attachments/assets/7985cf11-f964-44bb-8a98-4fe3c446bf88)",
+    "comments": "No, it is not possible.",
+    "llm_analysis": {
+      "correct_answer": "No, it is not possible to disable ublock origin lite when creating HTML snapshots.",
+      "reasoning_of_answer": "The answer is derived from the comment stating that it is not possible to disable ublock origin lite. This directly addresses the user's question about disabling the extension while creating HTML snapshots.",
+      "scoring_rubric": [
+        {
+          "key": "answer_correctness",
+          "description": "Requirement: The answer must accurately state whether it is possible to disable ublock origin lite. How to satisfy: Verify that the answer explicitly confirms or denies the possibility based on the context provided.",
+          "weight": 3
+        },
+        {
+          "key": "clarity_of_answer",
+          "description": "Requirement: The answer must be clear and unambiguous. How to satisfy: Check that the response is straightforward and does not include confusing language or unnecessary details.",
+          "weight": 2
+        },
+        {
+          "key": "relevance_to_question",
+          "description": "Requirement: The answer must directly address the user's question regarding HTML snapshots. How to satisfy: Ensure that the response is focused on the specific context of creating HTML snapshots and not on unrelated topics.",
+          "weight": 2
+        },
+        {
+          "key": "absence_of_factual_errors",
+          "description": "Requirement: The answer must not contain any factual inaccuracies. How to satisfy: Confirm that the information provided aligns with the known capabilities of ublock origin lite.",
+          "weight": 3
+        },
+        {
+          "key": "no_unverified_claims",
+          "description": "Requirement: The answer must not include claims that are not supported by evidence or previous comments. How to satisfy: Ensure that the response does not reference unsupported features or functionalities.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the importance of correctness and clarity, as the user's question is straightforward and requires a definitive answer."
+    },
+    "url": "https://github.com/sissbruecker/linkding/issues/931",
+    "created_at": "2024-12-28T23:04:01Z",
+    "updated_at": "2025-02-16T05:49:25Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 912,
+    "repo": "sissbruecker/linkding",
+    "title": "LD_SINGLEFILE_OPTIONS",
+    "body": "Hello,\r\n\r\nI am trying to use the \"self-extracting-archive=ture\" with LD_SINGLEFILE_OPTIONS but not sure how to do that inside of the .env file. Is this at all possible?",
+    "comments": "HI @StephenMottershead,\r\n\r\nYou can add the line `LD_SINGLEFILE_OPTIONS='--self-extracting-archive=true'` to the `.env.` file.  You will need to make sure that you have the env file option set to have all variables present in it passed to the container.  If you are using docker compose it would be these lines from the [example](https://github.com/sissbruecker/linkding/blob/master/docker-compose.yml):\r\n```yaml\r\n    env_file:\r\n      - .env\r\n```\r\n\r\nReferences:\r\n[https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/#use-the-env_file-attribute](https://docs.docker.com/compose/how-tos/environment-variables/set-environment-variables/#use-the-env_file-attribute)\r\n\nHello @jasonlearst \r\n\r\nThank you for your reply. Just try that now and still not working, just creates a normal HTML with embed image. This setting should make it so it creates an u.zip.html instead.\nHi @StephenMottershead ,\r\n\r\nI noticed that the value defaults to `true` according to the [code](https://github.com/gildas-lormeau/single-file-cli/blob/b7560b9bfb45ee719a0b0f8ce71a5b4a0c5aed67/options.js#L134C1-L135C1).\r\n\r\nI don't have any value set for `LD_SINGLEFILE_OPTIONS` and my instance stores `.html.gz` files.\nHello @jasonlearst, \r\n\r\nYes, that is right. The HTML is zipped in a gz, the zip doesn't contain any of the files like images. It a normal HTML file with all the image compressed into it. \n@StephenMottershead , I see.  As far as I can tell Linkding just integrates the [single-file-cli](https://github.com/gildas-lormeau/single-file-cli) application for archiving.  I suggest looking around the documentation/help for that application to figure out what options need to be passed to store the images in the format you want.\r\n\r\nOnce you know the options you need you can pass them into the single-file application with the `LD_SINGLEFILE_OPTIONS` environment variable.\nHello, \r\n\r\nAfter a little bit of playing about, I have sorted out the problem, and it wasn't obvious when you look at the file format. You need to put this code below in your .env file. \r\n\r\nThe HTML will still be in html.gz file, and you need to unzip to access the HTML file. You then need to change .html file to .zIp and then unzip it. This will let you access the files inside from the website including the images, etc. \r\n\r\n` compress-content=\"true\" ` \n> Hello,\r\n> \r\n> After a little bit of playing about, I have sorted out the problem, and it wasn't obvious when you look at the file format. You need to put this code below in your .env file.\r\n> \r\n> The HTML will still be in html.gz file, and you need to unzip to access the HTML file. You then need to change .html file to .zIp and then unzip it. This will let you access the files inside from the website including the images, etc.\r\n> \r\n> `compress-content=\"true\"`\r\n\r\nI can't reproduce your behavior: After decompressing the `.html.gz` I get an `.html` but if I change the extension to `.zip` the decompression doesn't work. Archive utility on Mac says is in unsupported format.\r\n\r\nUnsure if I was using the right syntax I played with the `.env` file, here are the different syntaxes with the results:\r\n\r\n```\r\nLD_SINGLEFILE_OPTIONS=--compress-content=true     -> creates snapshot but I can't unzip it\r\nLD_SINGLEFILE_OPTIONS=--compress-content=\"True\"   -> html snapshot failed\r\nLD_SINGLEFILE_OPTIONS='--compress-content=True'   -> html snapshot failed\r\nLD_SINGLEFILE_OPTIONS=--compress-content=True     -> html snapshot failed\r\n\r\n```\r\n\r\nWhich is the correct syntax to specify single file options in the `.env. file?\r\n\r\n\r\n\n> > Hello,\r\n> > After a little bit of playing about, I have sorted out the problem, and it wasn't obvious when you look at the file format. You need to put this code below in your .env file.\r\n> > The HTML will still be in html.gz file, and you need to unzip to access the HTML file. You then need to change .html file to .zIp and then unzip it. This will let you access the files inside from the website including the images, etc.\r\n> > `compress-content=\"true\"`\r\n> \r\n> I can't reproduce your behavior: After decompressing the `.html.gz` I get an `.html` but if I change the extension to `.zip` the decompression doesn't work. Archive utility on Mac says is in unsupported format.\r\n> \r\n> Unsure if I was using the right syntax I played with the `.env` file, here are the different syntaxes with the results:\r\n> \r\n> ```\r\n> LD_SINGLEFILE_OPTIONS=--compress-content=true     -> creates snapshot but I can't unzip it\r\n> LD_SINGLEFILE_OPTIONS=--compress-content=\"True\"   -> html snapshot failed\r\n> LD_SINGLEFILE_OPTIONS='--compress-content=True'   -> html snapshot failed\r\n> LD_SINGLEFILE_OPTIONS=--compress-content=True     -> html snapshot failed\r\n> ```\r\n> \r\n> Which is the correct syntax to specify single file options in the `.env. file?\r\n\r\n\r\nIt is the second one. `LD_SINGLEFILE_OPTIONS=--compress-content=\"true\"` It could be the capital T?\r\nI haven't tried doing it on a Mac cant see it being any different. I will give it a go in a bit.  \r\n\r\n\n> It is the second one. `LD_SINGLEFILE_OPTIONS=--compress-content=\"true\"` It could be the capital T? I haven't tried doing it on a Mac cant see it being any different. I will give it a go in a bit.\r\n\r\nI just tried\r\n`LD_SINGLEFILE_OPTIONS=--compress-content=\"true\"`\r\n\r\nLinkding creates the snapshot but the final zip is unable to decompress\n> > It is the second one. `LD_SINGLEFILE_OPTIONS=--compress-content=\"true\"` It could be the capital T? I haven't tried doing it on a Mac cant see it being any different. I will give it a go in a bit.\r\n> \r\n> I just tried `LD_SINGLEFILE_OPTIONS=--compress-content=\"true\"`\r\n> \r\n> Linkding creates the snapshot but the final zip is unable to decompress\r\n\r\nOkay. Just got my MacBook out and had a look. It is an apple thing. You need to use Unarchiver (app store)instead of the default one, sadly. If you like the terminal, the unzip command does seem to work. Very odd but working with that Unarchiver.  \n> Okay. Just got my MacBook out and had a look. It is an apple thing. You need to use Unarchiver (app store)instead of the default one, sadly. If you like the terminal, the unzip command does seem to work. Very odd but working with that Unarchiver.\r\n\r\nThank you so much, it works! ",
+    "llm_analysis": {
+      "correct_answer": "LD_SINGLEFILE_OPTIONS='--compress-content=true'",
+      "reasoning_of_answer": "The correct answer is derived from the comments where users discussed the correct syntax for setting the LD_SINGLEFILE_OPTIONS in the .env file. The specific line provided by the user is the one that successfully resolves the issue.",
+      "scoring_rubric": [
+        {
+          "key": "correct_syntax",
+          "description": "Requirement: The answer must provide the correct syntax for setting LD_SINGLEFILE_OPTIONS. How to satisfy: Verify that the answer includes 'LD_SINGLEFILE_OPTIONS='--compress-content=true'' exactly as specified.",
+          "weight": 3
+        },
+        {
+          "key": "explanation_of_effect",
+          "description": "Requirement: The answer must explain the effect of the LD_SINGLEFILE_OPTIONS setting. How to satisfy: Check if the answer describes that this setting will change the output format to include images in the archive.",
+          "weight": 2
+        },
+        {
+          "key": "env_file_reference",
+          "description": "Requirement: The answer must reference the need for the .env file to be correctly configured. How to satisfy: Ensure the answer mentions that the .env file must be used and properly referenced in the Docker setup.",
+          "weight": 2
+        },
+        {
+          "key": "avoid_incorrect_syntax",
+          "description": "Requirement: The answer must not include incorrect syntax examples. How to satisfy: Verify that the answer does not provide any incorrect variations of the LD_SINGLEFILE_OPTIONS syntax.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the importance of providing the correct syntax and explaining its effects, as well as ensuring that incorrect examples are avoided."
+    },
+    "url": "https://github.com/sissbruecker/linkding/issues/912",
+    "created_at": "2024-11-12T14:53:06Z",
+    "updated_at": "2025-02-16T05:54:52Z",
+    "language": "Python"
+  },
+  {
+    "question_id": 885,
+    "repo": "sissbruecker/linkding",
+    "title": "web_archive_snapshot_url not showing up in REST API",
+    "body": "I enable Internet Archive integration in my Settings and have access to the archived URLs by hovering the timestamp in the Dashboard, but am not sure why `web_archive_snapshot_url` is empty for all my links. The Django admin also doesn't show the snapshot URLs.\r\n\r\nDid I overlook anything? Thanks.\r\n\r\n(I'm running 1.36.0 on railway)",
+    "comments": "Since [1.31.1](https://github.com/sissbruecker/linkding/releases/tag/v1.31.1) the UI will dynamically generate a \"fallback\" link to the web archive if no specific snapshot URL is stored in the bookmark. But that is not the case for the API currently. I guess it should.\r\n\r\nFor some background: In general, new snapshots on the IA are only created when you add a single bookmark, either via the UI or the API. It doesn't create snapshots for bookmarks that you have imported though. I removed that functionality as that created a large number of background tasks which then consistently failed due to rate limiting with the web archive API. It also didn't make sense to generate, and then link to, a snapshot from a website in it's current form if the bookmark was added two years ago. So instead it just generates a dynamic link to a snapshot from the time the bookmark was created, and then the IA will usually show you the nearest one. Worst case no snapshot exists but that should be rare.\r\n\r\nI guess your issue is with bookmark that were imported then? Otherwise something would be wrong with background tasks, then you could check `background_tasks.log` for errors.\nMakes sense. Indeed I imported loads of links into Linkding for a test drive. ",
+    "llm_analysis": {
+      "correct_answer": "The `web_archive_snapshot_url` will be empty for bookmarks that were imported rather than added via the UI or API. New snapshots are only created when a bookmark is added directly, and imported bookmarks do not generate snapshots.",
+      "reasoning_of_answer": "The user is experiencing an issue with the `web_archive_snapshot_url` being empty. The comments clarify that snapshots are only created for bookmarks added directly and not for those imported. This directly addresses the user's concern and provides a complete explanation of the behavior of the API regarding snapshot URLs.",
+      "scoring_rubric": [
+        {
+          "key": "explanation_of_snapshot_creation",
+          "description": "Requirement: The answer must explain how snapshots are created for bookmarks. How to satisfy: Clearly state that snapshots are created only when bookmarks are added via the UI or API, not for imported bookmarks.",
+          "weight": 3
+        },
+        {
+          "key": "clarification_of_imported_bookmarks",
+          "description": "Requirement: The answer must clarify the behavior for imported bookmarks. How to satisfy: Indicate that imported bookmarks do not generate snapshots and explain the implications of this on the `web_archive_snapshot_url` being empty.",
+          "weight": 3
+        },
+        {
+          "key": "reference_to_background_tasks",
+          "description": "Requirement: The answer must mention checking background tasks for errors if applicable. How to satisfy: Suggest checking the `background_tasks.log` for any errors related to snapshot generation if the bookmarks were added correctly.",
+          "weight": 2
+        },
+        {
+          "key": "avoidance_of_unrelated_solutions",
+          "description": "Requirement: The answer must not suggest unrelated solutions or troubleshooting steps. How to satisfy: Ensure that the response focuses solely on the snapshot URL issue without introducing irrelevant information.",
+          "weight": 3
+        }
+      ],
+      "notes_of_score": "The rubric emphasizes the technical understanding of how the snapshot URLs are generated and the specific conditions under which they are created, ensuring that future answers are accurate and relevant."
+    },
+    "url": "https://github.com/sissbruecker/linkding/issues/885",
+    "created_at": "2024-10-14T22:52:06Z",
+    "updated_at": "2025-02-19T05:44:22Z",
+    "language": "Python"
+  }
+]
